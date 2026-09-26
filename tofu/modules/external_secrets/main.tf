@@ -2,16 +2,10 @@ resource "helm_release" "external_secrets" {
   name       = "external-secrets"
   repository = "https://charts.external-secrets.io"
   chart      = "external-secrets"
-  # Pinned — Global Constraint. Verified present in the live repo.
-  #
-  # DO NOT "refresh" this to 2.x. The pin is old on purpose: 0.9.x serves the
-  # `external-secrets.io/v1beta1` API, which is what every manifest in this
-  # plan declares (see `cluster-secret-store.yaml` below and all 14
-  # ClusterSecretStore references in Task 9). The 2.x line moved to `v1`, so a
-  # version bump here is not a version bump — it is an API contract change that
-  # would break Task 9 with no error at the pin site. Verified 2026-09-26: 0.9.11
-  # exists (appVersion v0.9.11); current upstream is 2.11.0.
-  version = "0.9.11"
+
+  # The pin lives in `var.chart_version` — read variables.tf for why 0.9.x must
+  # not be "refreshed" to 2.x. The warning sits with the value, not here.
+  version = var.chart_version
 
   namespace = var.namespace
 
