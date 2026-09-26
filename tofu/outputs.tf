@@ -22,7 +22,7 @@ output "endpoints" {
 
 output "namespaces" {
   description = "Namespaces created by the platform modules."
-  value       = sort(local.platform_namespaces)
+  value       = sort([for ns in module.namespaces : ns.name])
 }
 
 # Surfaced deliberately, even though nothing consumes it yet.

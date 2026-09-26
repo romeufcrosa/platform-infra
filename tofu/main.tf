@@ -98,3 +98,35 @@ locals {
     ministack_replica_count        = module.local.ministack_replica_count
   }
 }
+
+# `local.platform_namespaces` is NOT re-declared here. It already exists above,
+# from Task 3, and it has to: the namespace list is fixed *before* any namespace
+# is created, because that is the one decision a later task cannot recover if it
+# turns out wrong. Declaring it a second time in a second `locals` block is a hard
+# HCL error — `Duplicate local value definition` / `Attribute redefined` — so the
+# cluster would not come up at all.
+#
+# Task 4 adds the two `module` blocks below and nothing else to `tofu/main.tf`. The
+# list itself is unchanged: all eleven names, platform eight plus `dev`, `staging`,
+# `prod`. The application namespaces are created here rather than waiting for ArgoCD
+# to sync the Kustomize manifests, so `make verify` has a deterministic cluster to
+# check immediately after `tofu apply` instead of racing a GitOps sync.
+module "namespaces" {
+  source   = "./modules/namespace"
+  for_each = toset(local.platform_namespaces)
+
+  name = each.key
+  # An application namespace is labelled with its own name; a platform namespace
+  # is labelled `local`. This is what the verify script and the ArgoCD AppProjects
+  # key off.
+  environment = contains(["dev", "staging", "prod"], each.key) ? each.key : local.environment
+  labels      = local.common_labels
+}
+
+module "external_secrets" {
+  source    = "./modules/external_secrets"
+  namespace = "external-secrets"
+  timeout   = var.helm_timeout
+
+  depends_on = [module.namespaces]
+}
