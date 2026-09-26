@@ -63,8 +63,26 @@ it is always safe — it never recreates a cluster you already have.
 
 On creation it builds the profile named by `MINIKUBE_PROFILE` (default `platform`, which
 is also the contract in the Makefile), pinned to Kubernetes `v1.30.2` on the Docker
-driver, then enables three addons: `registry`, `ingress`, `metrics-server`. Every
-downstream component runs `kubectl`/`helm`/`tofu` against kubeconfig context `platform`.
+driver, then enables two addons: `ingress` and `metrics-server`. Every downstream
+component runs `kubectl`/`helm`/`tofu` against kubeconfig context `platform`.
+
+> **The `registry` addon is deliberately absent, not forgotten.** minikube's `registry`
+> addon deploys a `registry-proxy` DaemonSet pinned to
+> `gcr.io/k8s-minikube/kube-registry-proxy:0.0.6`, and that image has been **deleted from
+> gcr.io** — the tag list comes back empty and the manifest returns HTTP 404, and the
+> DaemonSet pins a `@sha256:` digest as well as a tag, so neither a retag nor a pull of
+> any other tag helps. The addon has no configuration options either, so there is nothing
+> to override. This is upstream breakage, reproducible beyond the `minikube 1.34.0` pin
+> ([minikube#21452](https://github.com/kubernetes/minikube/issues/21452) shows the same
+> class of failure on 1.36.0, closed `lifecycle/rotten`).
+>
+> Nothing in Phase 1 needs it. **The registry this project uses comes from
+> `tofu/modules/registry/`** — a Helm-installed registry in the `registry` namespace,
+> with `registry_url` and a pull secret in the platform namespaces as the contract. The
+> minikube addon was always redundant with that design; it is now both redundant and
+> broken. The `registry` namespace is created by OpenTofu in Task 4 and the registry
+> workload arrives in Task 8. **Please do not readd the addon** — it will fail, and the
+> failure is the confusing kind that only surfaces as an unrelated `ImagePullBackOff`.
 
 Each tunable is an environment override, so a machine that needs a different shape does
 not need a fork:
@@ -127,7 +145,7 @@ platform-infra/
 │   ├── variables.tf                   # every tunable input, typed
 │   ├── modules/
 │   │   ├── namespace/                 # one namespace, labelled
-│   │   ├── minikube_addons/           # registry/ingress/metrics-server addons
+│   │   ├── minikube_addons/           # ingress/metrics-server addons (records the baseline)
 │   │   ├── argocd/                    # helm_release + bootstrap Application
 │   │   ├── atlantis/                  # helm_release + repo creds + ngrok-less tunnel job
 │   │   ├── ministack/                 # helm_release or raw manifest + queue bootstrap Job
@@ -225,23 +243,28 @@ Docker Desktop memory limit (Settings → Resources) and then override:
 MINIKUBE_MEMORY=10240mb make cluster-up
 ```
 
-### `registry` addon fails with `ImagePullBackOff` on `kube-registry-proxy`
+### If you see `registry-proxy` in `ImagePullBackOff`
 
-**Known upstream breakage, not a config error.** The `registry` addon deploys two pieces:
-the registry itself (`docker.io/registry:2.8.3`) and a `registry-proxy` DaemonSet whose
-image is `gcr.io/k8s-minikube/kube-registry-proxy:0.0.6`. That image has been **deleted
-from gcr.io**, so the DaemonSet cannot pull and `minikube addons enable registry` dies
-with `MK_ADDON_ENABLE: ... context deadline exceeded`. The registry pod itself is fine —
-only the proxy is missing.
+You have re-enabled the minikube `registry` addon. Don't. It is dropped from the baseline
+deliberately, and it cannot be made to work.
 
-As of minikube 1.34.0 there is no supported fix: every `kube-registry-proxy` tag, and the
-digest the addon pins, are gone from gcr.io, and the addon exposes no image override
-(`minikube addons configure registry` reports no options). See
-[minikube#21452](https://github.com/kubernetes/minikube/issues/21452) — closed as
+The addon deploys two pieces: the registry itself (`docker.io/registry:2.8.3`) and a
+`registry-proxy` DaemonSet whose image is `gcr.io/k8s-minikube/kube-registry-proxy:0.0.6`.
+That image has been **deleted from gcr.io** — the tag list returns `{"tags":[]}` and the
+manifest returns HTTP 404 — so the DaemonSet cannot pull, and `minikube addons enable
+registry` dies with `MK_ADDON_ENABLE: ... context deadline exceeded`. The registry pod is
+fine; only the proxy is missing, which is why the symptom looks unrelated to a registry.
+
+There is no fix at the `minikube 1.34.0` pin. Every `kube-registry-proxy` tag *and* the
+digest the addon pins are gone from gcr.io; the addon exposes no image override
+(`minikube addons configure registry` reports no options); and because the DaemonSet pins
+a `@sha256:` digest, a tag bump would not help either. See
+[minikube#21452](https://github.com/kubernetes/minikube/issues/21452) — closed
 `lifecycle/rotten`, and it reproduces on newer releases too.
 
-Workaround until the pin is revisited: run with `registry` omitted, or supply the registry
-via a different mechanism. The `ingress` and `metrics-server` addons are unaffected.
+The registry this project actually uses is the Helm release in
+`tofu/modules/registry/`, not this addon. If you need a registry, use that. The
+`ingress` and `metrics-server` addons are unaffected.
 
 ### Toolchain pins
 
