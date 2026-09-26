@@ -9,7 +9,9 @@ crash.*.log
 # Local secrets — never commit (Global Constraint: no secret values in Git)
 local-secrets/
 *.auto.tfvars
+*.auto.tfvars.json
 !*.auto.tfvars.example
+!*.auto.tfvars.example.json
 
 # Tooling
 .mise/

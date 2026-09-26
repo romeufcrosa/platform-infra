@@ -37,7 +37,6 @@ verify: ## Run the Phase 1 success-criteria gate
 	./scripts/verify-phase1.sh
 
 .PHONY: fmt
-fmt: ## Format and validate OpenTofu + Helm + YAML
+fmt: ## Format and validate OpenTofu configuration
 	tofu -chdir=tofu fmt -recursive
 	tofu -chdir=tofu validate
-	helm lint helm/values 2>/dev/null || true

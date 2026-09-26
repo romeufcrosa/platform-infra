@@ -9,17 +9,50 @@ External Secrets, kube-prometheus-stack, Ministack, and a local registry on mini
 |-----------|-------|-------|--------------|---------------|
 | Repository + toolchain | 1 | ✅ done | `make help` | 2026-09-26 |
 | minikube cluster | 1 | ⬜ todo | `make cluster-up` | — |
-| …one row per component… |
+| OpenTofu root module | 1 | ⬜ todo | `tofu validate` | — |
+| Namespaces + External Secrets Operator | 1 | ⬜ todo | `kubectl get ns` | — |
+| CI + Kustomize + AppProjects | 1 | ⬜ todo | `make validate` | — |
+| ArgoCD | 1 | ⬜ todo | `argocd app list` | — |
+| Ministack (SQS/S3/Secrets Manager) | 1 | ⬜ todo | `aws sqs list-queues` | — |
+| kube-prometheus-stack + registry | 1 | ⬜ todo | `curl :9090/api/v1/targets` | — |
+| Vault + secret contract | 1 | ⬜ todo | `kubectl -n dev get secret` | — |
+| Atlantis + GitHub webhook | 1 | ⬜ todo | Atlantis plan comment on a PR | — |
+| Grafana dashboards | 1 | ⬜ todo | `curl :3000/api/search` | — |
+| Onboarding + `make verify` | 1 | ⬜ todo | clean rebuild in < 30 min | — |
+
+> Every component gets a real row rather than a `…one row per component…` placeholder.
+> A placeholder is the worst of both worlds: it reads as a table to a skimmer while
+> telling a human nothing, and a reviewer cannot tell whether the missing rows were
+> deliberate or forgotten. Task 12 flips each row to ✅ with its real verification
+> command and date.
 
 ## Quick start
 
 ```bash
+# 1. Toolchain. `mise install` puts the tools in mise's shims, but on macOS it
+#    does NOT shadow /usr/bin/make, so `make` would still resolve to Apple's
+#    BSD Make 3.81 — and GNU Make 4 is a hard requirement (the heredoc recipes
+#    in later tasks need it). Either activate mise in your shell...
 mise trust && mise install
+eval "$(mise activate bash)"     # or: mise activate  (zsh)
+make --version                   # must report GNU Make 4.4.1
+
+# ...or skip the shell setup and call make through mise explicitly:
+mise exec -- make cluster-up
+```
+
+```bash
 make cluster-up
 make deploy-infra
 make port-forwards
 make verify        # must print: PHASE 1 VERIFICATION PASSED
 ```
+
+> Quick start keeps `make` because the whole point of `.tool-versions` is that a
+> shell which has mise active resolves `make` to the pinned 4.4.1. The two
+> `mise exec --` lines are the escape hatch for a shell where it does not —
+> documented rather than assumed, because a reader who hits BSD Make 3.81 on
+> their first `make deploy-infra` will otherwise conclude the pin is broken.
 
 ## Architecture
 

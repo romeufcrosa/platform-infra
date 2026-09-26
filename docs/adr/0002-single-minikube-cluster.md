@@ -41,9 +41,19 @@ namespace isolation instead of cluster isolation**, because
 - it leaves enough headroom on a 16 GB host for Docker Desktop, the cluster, and a
   dashboard-rendering script to run at once.
 
-The namespaces are fixed by the Makefile's `NAMESPACES` variable:
-`argocd`, `atlantis`, `ministack`, `vault`, `monitoring`, `registry`,
-`external-secrets`, `platform-system`.
+The **source of truth** for the namespace list is `local.platform_namespaces` in
+`tofu/main.tf`, which drives the `namespace` module's `for_each`. It is created
+eagerly by `tofu apply` rather than waiting for an ArgoCD sync, so `make verify` has a
+deterministic cluster to check immediately instead of racing GitOps. The platform
+namespaces are: `argocd`, `atlantis`, `ministack`, `vault`, `monitoring`, `registry`,
+`external-secrets`, `platform-system` — plus the three application namespaces `dev`,
+`staging`, and `prod`, which Task 4 also creates. That is eleven in total.
+
+The Makefile's `NAMESPACES` variable is a **human-readable mirror** of the platform
+namespaces, maintained for `make help` output and for shell use in scripts. It is not
+authoritative and nothing consumes it to create namespaces; OpenTofu is. The two lists
+agree by review, not by mechanism — adding a namespace means changing
+`local.platform_namespaces` and updating the Makefile mirror to match.
 
 ### Positive Consequences
 
