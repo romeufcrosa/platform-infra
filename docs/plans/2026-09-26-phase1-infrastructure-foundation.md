@@ -565,8 +565,17 @@ done
 # correctness. Two safe forms: capture first, as below, or drop `-q` and check
 # the full read's exit code.
 addons="$(minikube -p "$PROFILE" addons list)"
+# The pattern MUST anchor the addon-name column. Unanchored
+# `grep -q "$addon.*enabled"` matches any row merely *starting with* the addon
+# name — and `minikube addons list` really does contain `ingress-dns`, a
+# separate addon. So with `ingress` disabled and `ingress-dns` enabled, the
+# unanchored check FALSE-PASSES and the gate is silently defeated. Anchor the
+# first column instead; verified against both fixtures.
+addon_enabled() { # addon_enabled <text> <name>
+  grep -qE "^\|[[:space:]]*$2[[:space:]]*\|.*enabled" <<<"$1"
+}
 for addon in ingress metrics-server; do
-  grep -q "$addon.*enabled" <<<"$addons" || { echo "FAIL: addon $addon not enabled"; exit 1; }
+  addon_enabled "$addons" "$addon" || { echo "FAIL: addon $addon not enabled"; exit 1; }
 done
 echo "T2 CHECK PASSED"
 EOF
@@ -3502,6 +3511,18 @@ section "Cluster"
 # `bash -c` wrapper, or add `set -o pipefail` to the wrapper, it will invert.
 # The robust form is capture-into-a-variable, then grep the captured text.
 check "kubeconfig context '$CTX' exists" bash -c "kubectl config get-contexts -o name | grep -qx '$CTX'"
+
+# Addon assertions anchor the name column. An unanchored `grep -q "$addon.*enabled"`
+# over `minikube addons list` matches any row merely STARTING with the addon name,
+# and that list really contains `ingress-dns` as a separate addon — so with
+# `ingress` off and `ingress-dns` on, an unanchored check false-passes and this
+# gate is silently defeated. A phase gate that can pass in the wrong state is
+# worse than no gate. Carried from the Task 2 finding.
+addons="$(minikube -p "$CTX" addons list 2>/dev/null || true)"
+addon_enabled() { grep -qE "^\|[[:space:]]*$1[[:space:]]*\|.*enabled" <<<"$2"; }
+for a in ingress metrics-server; do
+  check "addon '$a' enabled" addon_enabled "$a" "$addons"
+done
 check "API server is reachable" kubectl --context "$CTX" get --raw /readyz
 check "all nodes are Ready" bash -c \
   "[ \"\$(kubectl --context '$CTX' get nodes --no-headers | grep -cv ' Ready ')\" -eq 0 ]"
