@@ -54,6 +54,37 @@ make verify        # must print: PHASE 1 VERIFICATION PASSED
 > documented rather than assumed, because a reader who hits BSD Make 3.81 on
 > their first `make deploy-infra` will otherwise conclude the pin is broken.
 
+## Cluster lifecycle
+
+`make cluster-up` runs [`scripts/setup-minikube.sh`](scripts/setup-minikube.sh), which is
+the single entry point for the local cluster. It is **idempotent**: an existing, running
+profile is started and left otherwise untouched, and an absent one is created. Re-running
+it is always safe — it never recreates a cluster you already have.
+
+On creation it builds the profile named by `MINIKUBE_PROFILE` (default `platform`, which
+is also the contract in the Makefile), pinned to Kubernetes `v1.30.2` on the Docker
+driver, then enables three addons: `registry`, `ingress`, `metrics-server`. Every
+downstream component runs `kubectl`/`helm`/`tofu` against kubeconfig context `platform`.
+
+Each tunable is an environment override, so a machine that needs a different shape does
+not need a fork:
+
+| Variable | Default | Notes |
+|----------|---------|-------|
+| `MINIKUBE_PROFILE` | `platform` | Also the kubeconfig context name. |
+| `K8S_VERSION` | `v1.30.2` | Matches the pinned `kubectl 1.30.2`. |
+| `MINIKUBE_CPUS` | `4` | |
+| `MINIKUBE_MEMORY` | `7800mb` | See the Docker memory note below. |
+| `MINIKUBE_DISK` | `50g` | |
+
+The addon set is also recorded declaratively in
+[`tofu/modules/minikube_addons/`](tofu/modules/minikube_addons/). The addons themselves
+are applied by the script — minikube addons are a cluster-lifecycle concern that OpenTofu
+has no resource for — so the module does not manage them. It *asserts* them: the `check`
+block compares the caller's `addons` list against the documented baseline and warns when
+they drift. Note that an OpenTofu `check` block reports drift as a **warning**; the plan
+still exits `0`, so treat the warning as the signal rather than the exit code.
+
 ## Architecture
 
 The design this repo implements is
@@ -181,6 +212,36 @@ plan that produced it.
 
 Runbooks live in [`docs/runbooks/`](docs/runbooks/): `cluster-reset.md`,
 `atlantis-webhook-debug.md`, `argocd-out-of-sync.md`, `vault-unseal.md`.
+
+### `Docker Desktop has only NNNNMB memory but you specified MMMMMB`
+
+minikube refuses to give the node more memory than the Docker engine has in total, and a
+stock **Docker Desktop is allocated 8GB, which reports as ~7834MB**. That is why the
+default is `7800mb` and not a rounder `8192mb` — a round 8GB is unreachable on a default
+Docker Desktop install, and the failure is a hard refusal, not a slow boot. Raise the
+Docker Desktop memory limit (Settings → Resources) and then override:
+
+```bash
+MINIKUBE_MEMORY=10240mb make cluster-up
+```
+
+### `registry` addon fails with `ImagePullBackOff` on `kube-registry-proxy`
+
+**Known upstream breakage, not a config error.** The `registry` addon deploys two pieces:
+the registry itself (`docker.io/registry:2.8.3`) and a `registry-proxy` DaemonSet whose
+image is `gcr.io/k8s-minikube/kube-registry-proxy:0.0.6`. That image has been **deleted
+from gcr.io**, so the DaemonSet cannot pull and `minikube addons enable registry` dies
+with `MK_ADDON_ENABLE: ... context deadline exceeded`. The registry pod itself is fine —
+only the proxy is missing.
+
+As of minikube 1.34.0 there is no supported fix: every `kube-registry-proxy` tag, and the
+digest the addon pins, are gone from gcr.io, and the addon exposes no image override
+(`minikube addons configure registry` reports no options). See
+[minikube#21452](https://github.com/kubernetes/minikube/issues/21452) — closed as
+`lifecycle/rotten`, and it reproduces on newer releases too.
+
+Workaround until the pin is revisited: run with `registry` omitted, or supply the registry
+via a different mechanism. The `ingress` and `metrics-server` addons are unaffected.
 
 ### Toolchain pins
 
