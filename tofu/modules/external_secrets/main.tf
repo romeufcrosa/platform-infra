@@ -37,17 +37,23 @@ resource "helm_release" "external_secrets" {
   # docs/adr/0002-single-minikube-cluster.md.
 }
 
-resource "kubernetes_secret" "es_creds" {
-  count = var.vault_token == "" ? 0 : 1
-
-  metadata {
-    name      = "external-secrets-vault-creds"
-    namespace = var.namespace
-  }
-
-  data = {
-    token = var.vault_token
-  }
-
-  depends_on = [helm_release.external_secrets]
-}
+# NOTE: this module does NOT create the `external-secrets-vault-creds` secret,
+# and must not gain one.
+#
+# Task 9 (`tofu/modules/vault`) owns that secret, exactly once. It used to be
+# declared here as `kubernetes_secret.es_creds`, gated on
+# `count = var.vault_token == "" ? 0 : 1`, and it was a latent conflict rather
+# than a working split: same `metadata.name`, same namespace, two modules, two
+# OpenTofu resources competing for one Kubernetes object.
+#
+# The `count` guard hid the collision perfectly. `vault_token` was passed by no
+# call site, so `es_creds` sat at count 0 and the plan stayed clean — until the
+# one caller that sets it arrives, at which point two resources fight over one
+# object (perpetual diff, or "Provider produced inconsistent result after
+# apply" depending on ordering).
+#
+# The underlying reason the secret cannot live here: a Vault root token does
+# not exist until Vault does, and Vault is Task 9. A count guard is the wrong
+# tool for expressing "the value does not exist yet" — it defers the
+# disagreement instead of removing it. Task 9 has the real token
+# (`random_password.root_token.result`) and therefore the real writer.

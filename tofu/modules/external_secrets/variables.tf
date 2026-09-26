@@ -1,5 +1,5 @@
 variable "namespace" {
-  description = "Namespace for the operator and its credentials secret."
+  description = "Namespace for the operator."
   type        = string
   default     = "external-secrets"
 }
@@ -32,9 +32,10 @@ variable "timeout" {
   default     = 600
 }
 
-variable "vault_token" {
-  description = "Vault token used by the ClusterSecretStore. Set by Task 9."
-  type        = string
-  default     = ""
-  sensitive   = true
-}
+# There is deliberately no `vault_token` variable here, and there was one until
+# 2026-09-27. It fed a `kubernetes_secret.es_creds` in this module that
+# duplicated the `external-secrets-vault-creds` secret Task 9 already owns —
+# two OpenTofu resources, one Kubernetes object, one name and namespace. The
+# `count = var.vault_token == "" ? 0 : 1` guard meant no call site ever set it,
+# so the conflict stayed dormant. Task 9 holds the only real writer. See the
+# note at the end of main.tf.
