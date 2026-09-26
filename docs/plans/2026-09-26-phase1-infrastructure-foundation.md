@@ -554,8 +554,15 @@ kubectl config get-contexts -o name | grep -qx "$PROFILE" || { echo "FAIL: conte
 for ns in kube-system; do
   kubectl --context "$PROFILE" get ns "$ns" >/dev/null || { echo "FAIL: ns $ns"; exit 1; }
 done
+# Capture the addon list ONCE, then grep the captured text. Do NOT write
+# `minikube addons list | grep -q ...` here: under `set -o pipefail`, `grep -q`
+# exits at the first match, the producer takes SIGPIPE (141), and pipefail
+# promotes that to non-zero — so a *passing* match reports as FAIL. (Verified
+# against minikube 1.34.0: PIPESTATUS=141 0.) Two safe forms: capture first, as
+# below, or drop `-q` and check the full read's exit code.
+addons="$(minikube -p "$PROFILE" addons list)"
 for addon in ingress metrics-server; do
-  minikube -p "$PROFILE" addons list | grep -q "$addon.*enabled" || { echo "FAIL: addon $addon not enabled"; exit 1; }
+  grep -q "$addon.*enabled" <<<"$addons" || { echo "FAIL: addon $addon not enabled"; exit 1; }
 done
 echo "T2 CHECK PASSED"
 EOF
@@ -3482,6 +3489,14 @@ done
 
 # --- 1. cluster -------------------------------------------------------------
 section "Cluster"
+# Pipe safety: every `<producer> | grep -q` assertion below is wrapped in
+# `bash -c`, and a bare `bash -c` does NOT inherit this script's `pipefail`.
+# That is what makes them safe. Under an active pipefail, `grep -q` exits at the
+# first match, the producer takes SIGPIPE (141), and pipefail promotes that to
+# non-zero — so a *passing* match reports as FAIL (verified on minikube 1.34.0:
+# PIPESTATUS=141 0). If you ever add an assertion that pipes WITHOUT the
+# `bash -c` wrapper, or add `set -o pipefail` to the wrapper, it will invert.
+# The robust form is capture-into-a-variable, then grep the captured text.
 check "kubeconfig context '$CTX' exists" bash -c "kubectl config get-contexts -o name | grep -qx '$CTX'"
 check "API server is reachable" kubectl --context "$CTX" get --raw /readyz
 check "all nodes are Ready" bash -c \
