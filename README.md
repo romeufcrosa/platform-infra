@@ -14,13 +14,7 @@ External Secrets, kube-prometheus-stack, Ministack, and a local registry on mini
 ## Quick start
 
 ```bash
-mise trust
-
-# The pinned python 3.12.5 prebuilt artifact predates Python's release
-# attestations, so mise's verification rejects it without this.
-export MISE_PYTHON_GITHUB_ATTESTATIONS=false
-mise install
-
+mise trust && mise install
 make cluster-up
 make deploy-infra
 make port-forwards
@@ -163,25 +157,25 @@ Runbooks live in [`docs/runbooks/`](docs/runbooks/): `cluster-reset.md`,
 on `PATH` — macOS ships kubectl 1.36, Helm 4, jq 1.8, and **GNU Make 3.81**, and Make
 3.81 breaks the heredoc recipes these targets rely on.
 
-Four pins could not be expressed in `.tool-versions` and are installed another way. The
-**versions are exactly as planned**; only the install mechanism differs, because the
-current mise registry renamed or dropped those keys:
+Two pins are written under a different mise key. The **versions are exactly as planned**;
+only the registry key differs, because the current mise registry renamed them:
 
-| Planned | Installed as | Why |
-|---------|--------------|-----|
-| `tofu 1.7.0` | `opentofu 1.7.0` in `.tool-versions` | mise renamed the registry key `tofu` → `opentofu`. Same binary, same version. |
-| `docker 27.1.0` | `docker-cli 27.1.0` in `.tool-versions` | mise renamed the registry key `docker` → `docker-cli`. Same binary, same version. |
-| `mise 2024.10.0` | installed via `curl https://mise.run \| sh` | mise cannot manage itself; the brief states mise is a prerequisite, not a `.tool-versions` entry. Installed: 2026.9.14. |
-| `atlantis 0.28.0` | official release binary, `~/.local/bin/atlantis` | mise has no `atlantis` registry entry at any version. Installed 0.28.0 from the runatlantis GitHub release. |
+| Planned | Written as | Why |
+|---------|-----------|-----|
+| `tofu 1.7.0` | `opentofu 1.7.0` | mise renamed the registry key `tofu` → `opentofu`. Same binary, same version. |
+| `docker 27.1.0` | `docker-cli 27.1.0` | mise renamed the registry key `docker` → `docker-cli`. Same binary, same version. |
 
-`python 3.12.5` also needs one extra env var, because the 3.12.5 prebuilt artifact
-predates Python's release attestations and mise's verification fails on it:
+`mise` itself is a prerequisite, not a `.tool-versions` entry — it cannot manage itself.
+Install it with `curl https://mise.run | sh` (currently 2026.9.14).
 
-```bash
-export MISE_PYTHON_GITHUB_ATTESTATIONS=false
-```
+`docker-cli 27.1.0` pins the **client only**. The daemon comes from Docker Desktop and
+reports its own, different version. That mismatch is expected, not toolchain drift.
 
-Everything else installs with a plain `mise install`. Verify the whole set with:
+Not pinned: Atlantis. The Phase 1 work deploys the Atlantis *server* via its Helm chart,
+whose `0.28.0` version is pinned in the module — no Phase 1 script invokes the Atlantis
+CLI, so a CLI pin would be theatre.
+
+Everything installs with a plain `mise install`. Verify the set with:
 
 ```bash
 mise exec -- tofu version        # OpenTofu v1.7.0
