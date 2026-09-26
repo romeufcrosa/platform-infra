@@ -386,7 +386,7 @@ jobs:
     services:
       postgres: { image: postgres:16, env: ... }
       redis: { image: redis:7 }
-      ministack: { image: ministack/ministack:latest }
+      ministack: { image: ghcr.io/ministack/ministack:v0.9.0 }
     steps:
       - uses: actions/checkout@v4
       - name: Unit + Integration tests

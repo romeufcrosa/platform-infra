@@ -1108,6 +1108,12 @@ resource "helm_release" "external_secrets" {
 
   namespace = var.namespace
 
+  # OpenTofu owns every namespace (see the Global Constraint). Without this
+  # line a chart that defaults to creating its own namespace races the
+  # `module.namespaces` for_each for the same object, and the two tools then
+  # disagree about who owns it.
+  create_namespace = false
+
   timeout = var.timeout
 
   set {
@@ -1845,6 +1851,12 @@ resource "helm_release" "argocd" {
 
   namespace = var.namespace
 
+  # OpenTofu owns every namespace (see the Global Constraint). Without this
+  # line a chart that defaults to creating its own namespace races the
+  # `module.namespaces` for_each for the same object, and the two tools then
+  # disagree about who owns it.
+  create_namespace = false
+
   timeout = var.timeout
 
   values = [file("${path.module}/../../helm/values/argocd.yaml")]
@@ -2229,6 +2241,12 @@ resource "helm_release" "ministack" {
   version    = var.chart_version
 
   namespace = var.namespace
+
+  # OpenTofu owns every namespace (see the Global Constraint). Without this
+  # line a chart that defaults to creating its own namespace races the
+  # `module.namespaces` for_each for the same object, and the two tools then
+  # disagree about who owns it.
+  create_namespace = false
   timeout   = var.timeout
 
   # values file holds everything except the tag, which comes from the
@@ -2512,6 +2530,12 @@ resource "helm_release" "prometheus" {
   version    = var.chart_version
 
   namespace = var.namespace
+
+  # OpenTofu owns every namespace (see the Global Constraint). Without this
+  # line a chart that defaults to creating its own namespace races the
+  # `module.namespaces` for_each for the same object, and the two tools then
+  # disagree about who owns it.
+  create_namespace = false
   timeout   = var.timeout
 
   values = concat(
@@ -2855,6 +2879,12 @@ resource "helm_release" "vault" {
   version    = var.chart_version
 
   namespace = var.namespace
+
+  # OpenTofu owns every namespace (see the Global Constraint). Without this
+  # line a chart that defaults to creating its own namespace races the
+  # `module.namespaces` for_each for the same object, and the two tools then
+  # disagree about who owns it.
+  create_namespace = false
   timeout   = var.timeout
 
   values = concat(
@@ -3187,6 +3217,12 @@ resource "helm_release" "atlantis" {
   version    = "0.28.0"
 
   namespace = var.namespace
+
+  # OpenTofu owns every namespace (see the Global Constraint). Without this
+  # line a chart that defaults to creating its own namespace races the
+  # `module.namespaces` for_each for the same object, and the two tools then
+  # disagree about who owns it.
+  create_namespace = false
   timeout   = var.timeout
 
   values = concat(

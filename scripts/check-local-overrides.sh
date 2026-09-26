@@ -36,7 +36,7 @@ done
 locals_block="$(awk '/^locals \{/,/^\}/' "$MODULE_DIR/overrides.tf")"
 local_names="$(sed -n 's/^[[:space:]]*\([a-z_][a-z0-9_]*\)[[:space:]]*=.*/\1/p' <<<"$locals_block" | sort)"
 
-outputs_block="$(awk '/^output "/{print}' "$MODULE_DIR/outputs.tf")"
+outputs_block="$(cat "$MODULE_DIR/outputs.tf")"
 output_names="$(sed -n 's/^output "\([a-z_][a-z0-9_]*\)".*/\1/p' <<<"$outputs_block" | sort)"
 
 # --- 2. and must also be listed in local_overrides in main.tf ----------------
@@ -71,7 +71,11 @@ report "every output is consumed by local_overrides" "$missing_consumed"
 # OpenTofu 1.7.0 rejects `type` in an output block (it is a Terraform 1.3+
 # feature). This is the first file later tasks copy from, so catch a regression
 # here rather than propagating it four times.
-type_lines="$(grep -nE '^[[:space:]]*type[[:space:]]*=' <<<"$outputs_block" || true)"
+#
+# Comments are stripped first, and the match is anchored to a real assignment.
+# The file's own header discusses `type` at length, so an unanchored search
+# would match this very check's documentation and fail forever.
+type_lines="$(grep -nE '^[[:space:]]*type[[:space:]]*=' <<<"$(grep -vE '^[[:space:]]*#' <<<"$outputs_block")" || true)"
 if [ -z "$type_lines" ]; then
   printf '  PASS no `type =` on any output (OpenTofu 1.7 constraint)\n'
 else
