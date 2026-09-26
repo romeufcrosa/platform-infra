@@ -174,7 +174,7 @@ plan that produced it.
   destroy-infra      Destroy all infrastructure managed by OpenTofu (destructive)
   port-forwards      Forward ArgoCD, Grafana, Vault, Ministack, registry to localhost
   verify             Run the Phase 1 success-criteria gate
-  fmt                Format and validate OpenTofu + Helm + YAML
+  fmt                Format and validate OpenTofu configuration
 ```
 
 ## Troubleshooting
