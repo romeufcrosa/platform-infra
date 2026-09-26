@@ -41,3 +41,21 @@ variable "ministack_image" {
   type        = string
   default     = "ghcr.io/ministack/ministack:v0.9.0"
 }
+
+variable "platform_infra_repo_url" {
+  description = <<-EOT
+    Git URL of this repository. Used twice, deliberately: ArgoCD registers it
+    as a repo secret so the Application can read its own source, and the
+    Atlantis module uses the same value for the repo it locks. One variable,
+    so the two can never disagree about which repo the platform manages.
+  EOT
+  type        = string
+  default     = "https://github.com/romeufcrosa/platform-infra.git"
+}
+
+variable "github_pat" {
+  description = "PAT used by ArgoCD to read the repo and by the Atlantis smoke test. Empty for a public repo."
+  type        = string
+  default     = ""
+  sensitive   = true
+}

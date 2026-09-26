@@ -1,0 +1,92 @@
+# Values for argo/argo-cd 6.7.x (ArgoCD 2.10). Every image tag is pinned;
+# the chart's own default is a moving target.
+#
+# The 6.7.x chart line is the one that natively renders ArgoCD 2.10.x — 6.7.18
+# ships appVersion v2.10.9, read off the unpacked chart's Chart.yaml, and the
+# tag below is that same appVersion written out. Do not "move to 7.x": that line
+# renders ArgoCD 2.12+, which is a different API contract for the AppProject
+# and Application manifests written in Tasks 5 and 6. Verified 2026-09-26
+# against the pulled chart.
+global:
+  image:
+    tag: v2.10.9
+
+crds:
+  install: true
+  keep: true
+
+server:
+  replicas: 1
+  service:
+    type: ClusterIP
+  metrics:
+    enabled: true
+    # EXPLICITLY OFF here, and the line is load-bearing.
+    #
+    # The chart's ServiceMonitor template is gated on
+    # `.Capabilities.APIVersions.Has "monitoring.coreos.com/v1"`
+    # (templates/argocd-server/servicemonitor.yaml:1). Task 6 runs *parallel
+    # with* Task 8, and Task 8 is what installs kube-prometheus-stack. If Task
+    # 6 applies first, that CRD does not exist, the template renders nothing,
+    # and Helm records the omission — so every later apply produces no new
+    # manifest and the ServiceMonitor never appears at all. An absence that
+    # never becomes a presence, with nothing in the plan output to explain it.
+    #
+    # Writing `false` makes the state a stated value instead of an accident of
+    # ordering. Task 8 flips this to true through
+    # `var.enable_service_monitor` once the CRD is installed; the `false` is
+    # what makes that flip a real change rather than a no-op.
+    serviceMonitor:
+      enabled: false
+  # Single replica: a laptop does not need HA. See ADR 0002.
+  autoscaling:
+    enabled: false
+
+applicationSet:
+  enabled: true
+
+dex:
+  # Dex is OFF in Phase 1, and that is a decision rather than an omission.
+  # Phase 1 authenticates with the local admin account; SSO is not in its
+  # scope. A Dex running with zero connectors serves no purpose and has exactly
+  # one failure mode worth having — a component that starts, accepts no
+  # login, and then gets debugged for a feature nobody asked for yet.
+  enabled: false
+  #
+  # Two things this used to get wrong, both worth keeping written down:
+  #
+  # 1. The connector block that sat here DOES NOT EXIST in this chart.
+  #    `values.yaml:893` onward is the whole `dex` block and it has no
+  #    `config` key; 6.7.x carries the Dex configuration as a `configs.cm`
+  #    pass-through (a YAML *string*, keyed `dex.config`, whose document
+  #    starts at `connectors:` — see the chart's own commented example at
+  #    `values.yaml:187-196`). Because the chart ships no
+  #    `values.schema.json`, the old key was dropped without a warning: Dex
+  #    started with no connector at all while the comment beside it described a
+  #    GitHub OAuth connector that was never configured. The comment was the
+  #    only thing that existed.
+  # 2. The old body opened with `dex.config: "github"` — a *mapping key* where
+  #    the chart wants a document. Porting that verbatim would have carried the
+  #    bug into the new home.
+  #
+  # When SSO is wanted: set `enabled: true` and add `dex.config` under
+  # `configs.cm` with a real connector. The GitHub OAuth app is Task 10's job,
+  # alongside the Atlantis repo secret.
+
+notifications:
+  enabled: false
+
+configs:
+  # Pass-through map into the argocd-cm ConfigMap. Annotation tracking keeps
+  # ArgoCD from adding its own last-applied annotation on top of manifests that
+  # OpenTofu also manages locally.
+  #
+  # This is `configs.cm`, NOT a top-level `application:` block. The chart has no
+  # such block, and Helm does not error on an unknown value **in this chart** —
+  # it ships no `values.schema.json`, so an unknown key is silently dropped and
+  # ArgoCD would keep its default tracking method. Whether that is true depends
+  # on the chart, not on Helm: the Atlantis chart ships a schema with
+  # `additionalProperties: false` and fails loudly on the same mistake. Check
+  # before assuming. Verified against argo/argo-cd 6.7.18.
+  cm:
+    application.resourceTrackingMethod: annotation

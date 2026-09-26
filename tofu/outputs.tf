@@ -16,8 +16,16 @@
 # is gone. See task-3-report.md.
 
 output "endpoints" {
-  description = "Map of component name to local endpoint URL. Extended by each component task."
-  value       = {}
+  description = <<-EOT
+    Map of component name to its host-local endpoint URL. This single map is
+    the contract that `scripts/verify-phase1.sh` and `docs/onboarding.md`
+    read, so every component task adds exactly one entry here and nothing
+    else. Keys: argocd, atlantis, grafana, prometheus, vault, ministack,
+    registry.
+  EOT
+  value = {
+    argocd = "https://localhost:8081"
+  }
 }
 
 output "namespaces" {
@@ -38,4 +46,9 @@ output "namespaces" {
 output "local_overrides" {
   description = "Values from the local environment profile, for plan visibility. Consumed by Tasks 7-10."
   value       = local.local_overrides
+}
+
+output "argocd_password_file" {
+  description = "Path to the ArgoCD admin password file."
+  value       = module.argocd.password_file
 }

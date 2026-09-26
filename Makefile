@@ -21,7 +21,19 @@ cluster-down: ## Delete the minikube cluster (destructive)
 .PHONY: deploy-infra
 deploy-infra: ## Apply all infrastructure with OpenTofu
 	tofu -chdir=tofu init -upgrade=false -input=false
+	$(MAKE) bootstrap-argocd
 	tofu -chdir=tofu apply -auto-approve -input=false
+
+.PHONY: bootstrap-argocd
+bootstrap-argocd: ## Install the ArgoCD chart (and its CRDs) before the first full apply
+	@# `kubernetes_manifest.bootstrap_application` resolves Application against
+	@# the live API at PLAN time, so on a cluster where the CRD is not yet
+	@# installed the full plan fails with "no matches for kind Application"
+	@# before any apply-time `depends_on` can be considered. Applying the
+	@# release on its own first installs applications.argoproj.io and makes the
+	@# full plan resolvable. Idempotent: a no-op once the chart is installed.
+	@# See tofu/modules/argocd/main.tf and docs/runbooks/argocd-out-of-sync.md.
+	tofu -chdir=tofu apply -auto-approve -input=false -target=module.argocd.helm_release.argocd
 
 .PHONY: destroy-infra
 destroy-infra: ## Destroy all infrastructure managed by OpenTofu (destructive)

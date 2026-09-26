@@ -130,3 +130,15 @@ module "external_secrets" {
 
   depends_on = [module.namespaces]
 }
+
+module "argocd" {
+  source = "./modules/argocd"
+
+  namespace      = "argocd"
+  timeout        = var.helm_timeout
+  admin_password = var.argocd_admin_password
+  repo_url       = var.platform_infra_repo_url
+  repo_password  = var.github_pat
+
+  depends_on = [module.namespaces]
+}
