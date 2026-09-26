@@ -14,7 +14,13 @@ External Secrets, kube-prometheus-stack, Ministack, and a local registry on mini
 ## Quick start
 
 ```bash
-mise trust && mise install
+mise trust
+
+# The pinned python 3.12.5 prebuilt artifact predates Python's release
+# attestations, so mise's verification rejects it without this.
+export MISE_PYTHON_GITHUB_ATTESTATIONS=false
+mise install
+
 make cluster-up
 make deploy-infra
 make port-forwards
