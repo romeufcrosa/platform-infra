@@ -1,0 +1,24 @@
+# OpenTofu
+.terraform/
+*.tfstate
+*.tfstate.*
+.terraform.lock.hcl.bak
+crash.log
+crash.*.log
+
+# Local secrets — never commit (Global Constraint: no secret values in Git)
+local-secrets/
+*.auto.tfvars
+!*.auto.tfvars.example
+
+# Tooling
+.mise/
+.tool-versions.local
+node_modules/
+.helm-cache/
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
