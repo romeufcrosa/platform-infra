@@ -86,7 +86,7 @@ platform-infra/
 ├── .gitignore                         # local-secrets/, .terraform/, *.tfstate
 ├── .tool-versions                     # pinned versions
 ├── .env.example                       # GITHUB_ORG/REPO, TUNNEL token, etc.
-├── Makefile                           # cluster-up, deploy-infra, port-forwards, verify, cluster-down
+├── Makefile                           # help, cluster-up, cluster-down, deploy-infra, destroy-infra, port-forwards, verify, fmt
 ├── README.md                          # the maintained status document
 ├── tofu/
 │   ├── versions.tf                    # required_version + required_providers
@@ -187,8 +187,9 @@ Runbooks live in [`docs/runbooks/`](docs/runbooks/): `cluster-reset.md`,
 `.tool-versions` pins every tool the scripts and Makefile depend on. Run
 `mise trust && mise install` after cloning, and run the tools through
 `mise exec -- <tool>` (or activate mise in your shell) so the pinned version is the one
-on `PATH` — macOS ships kubectl 1.36, Helm 4, jq 1.8, and **GNU Make 3.81**, and Make
-3.81 breaks the heredoc recipes these targets rely on.
+on `PATH` — macOS ships kubectl 1.36, Helm 4, and **GNU Make 3.81**, and Make
+3.81 breaks the heredoc recipes these targets rely on. (`jq` is absent from macOS
+entirely, which is why it is pinned here rather than assumed.)
 
 Two pins are written under a different mise key. The **versions are exactly as planned**;
 only the registry key differs, because the current mise registry renamed them:
