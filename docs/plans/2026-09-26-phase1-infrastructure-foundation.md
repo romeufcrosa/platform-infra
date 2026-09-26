@@ -550,16 +550,20 @@ cat > /tmp/phase1-t2-check.sh <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 PROFILE=platform
-kubectl config get-contexts -o name | grep -qx "$PROFILE" || { echo "FAIL: context $PROFILE missing"; exit 1; }
+contexts="$(kubectl config get-contexts -o name)"
+grep -qx "$PROFILE" <<<"$contexts" || { echo "FAIL: context $PROFILE missing"; exit 1; }
 for ns in kube-system; do
   kubectl --context "$PROFILE" get ns "$ns" >/dev/null || { echo "FAIL: ns $ns"; exit 1; }
 done
-# Capture the addon list ONCE, then grep the captured text. Do NOT write
-# `minikube addons list | grep -q ...` here: under `set -o pipefail`, `grep -q`
-# exits at the first match, the producer takes SIGPIPE (141), and pipefail
-# promotes that to non-zero — so a *passing* match reports as FAIL. (Verified
-# against minikube 1.34.0: PIPESTATUS=141 0.) Two safe forms: capture first, as
-# below, or drop `-q` and check the full read's exit code.
+# Capture output ONCE, then grep the captured text. Do NOT write
+# `<producer> | grep -q ...` here under `set -o pipefail`: `grep -q` exits at
+# the first match, the producer takes SIGPIPE (141), and pipefail promotes that
+# to non-zero — so a *passing* match reports as FAIL. (Verified against minikube
+# 1.34.0: PIPESTATUS=141 0.) The context check above uses the same capture form
+# for the same reason: it passes today only because kubectl's output is small
+# enough to fit the pipe buffer before `grep -q` exits, which is luck, not
+# correctness. Two safe forms: capture first, as below, or drop `-q` and check
+# the full read's exit code.
 addons="$(minikube -p "$PROFILE" addons list)"
 for addon in ingress metrics-server; do
   grep -q "$addon.*enabled" <<<"$addons" || { echo "FAIL: addon $addon not enabled"; exit 1; }

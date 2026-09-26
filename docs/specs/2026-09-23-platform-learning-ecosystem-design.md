@@ -63,7 +63,7 @@ This document specifies a **multi-repository platform learning ecosystem** that 
   "memory": "8192mb",
   "disk-size": "50g",
   "driver": "docker",
-  "addons": ["registry", "ingress", "metrics-server"]
+  "addons": ["ingress", "metrics-server"]
 }
 ```
 
@@ -157,7 +157,11 @@ Vault KV v2
 - Infrastructure (minikube resources, Ministack queue depths)
 
 ### 3.8 Container Registry
-- **Local:** minikube `registry` addon (port 5000)
+- **Local:** Helm-installed registry in the `registry` namespace (port 5000), deployed by
+  `tofu/modules/registry/` — **not** the minikube `registry` addon. That addon's proxy
+  image (`gcr.io/k8s-minikube/kube-registry-proxy:0.0.6`) was deleted upstream, and the
+  addon has no configuration override; it was also redundant with the Helm registry this
+  design already specifies. See the Task 2 rationale in the Phase 1 plan.
 - **Image Tagging:** `{service}:{git-sha}-{short-branch}`
 - **Base Images:** Built separately, pushed to registry
 - **SBOM:** Syft/Grype scanning in CI
