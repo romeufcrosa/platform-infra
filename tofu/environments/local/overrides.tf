@@ -1,11 +1,15 @@
 # Local-profile overrides. Everything here is a deliberate deviation from
 # a production posture, and each line says why.
 #
-# NOT loaded by OpenTofu. OpenTofu only evaluates .tf files that belong to a
-# module it was told to load, and this directory is not a module (there is
-# deliberately no backend.tf here, since a second backend block in a module is
-# a hard error). Later tasks reference these locals through an explicit
-# `source = "./environments/local"` module call if they need them.
+# This file is LIVE, not documentation. It is the subject of the Phase 1 Atlantis
+# exit criterion ("open a PR editing this file, read the plan comment"), so
+# editing a value here must produce a non-empty `tofu plan` diff. That works
+# because this directory is a real module: `outputs.tf` alongside this file
+# forwards each local as a module output, and the root consumes
+# `module.local.*`. A file no tool reads cannot be the subject of a plan review.
+#
+# Still no `backend.tf` here: this is a module, not a root, and a second
+# backend block in the root module is a hard error.
 locals {
   vault_dev_mode                 = true # single unseal key, in-memory storage: disposable by design
   prometheus_retention           = "2d" # 30d retention is a production value; 2d keeps the laptop usable

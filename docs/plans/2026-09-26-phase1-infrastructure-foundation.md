@@ -16,7 +16,7 @@
 
 These apply to **every** task. Do not deviate without amending the spec first.
 
-- **IaC language is OpenTofu, not Terraform.** All files are `.tf`; run `tofu`, never `terraform`. Terraform version in `atlantis.yaml` is the OpenTofu version.
+- **IaC language is OpenTofu, not Terraform.** All files are `.tf`; run `tofu`, never `terraform`. Terraform version in `atlantis.yaml` is the OpenTofu version. **Two HCL details follow from the pin and are not negotiable by analogy to Terraform docs:** (1) the `terraform {` block name stays `terraform` — the `tofu {` alias is OpenTofu 1.8.0+ and hard-errors ("Unsupported block type") on the pinned 1.7.0. The constraint governs the *binary*, not the HCL keyword. (2) **`output` blocks take no `type =` argument** — that is a Terraform 1.3+ feature; on 1.7.0 it is a hard `Unsupported argument` error and the module will not validate. `variable` blocks still accept `type` normally. Verified against OpenTofu 1.7.0 on 2026-09-26.
 - **Pinned tool versions** live in `.tool-versions` and must be used verbatim: `go 1.22.5`, `nodejs 20.17.0`, `opentofu 1.7.0`, `kubectl 1.30.2`, `helm 3.15.3`, `minikube 1.34.0`, `argocd 2.10.5`, `docker-cli 27.1.0`, `cloudflared 2024.10.0`, `awscli 2.17.0`, `jq 1.8.2`, `make 4.4.1`. Two notes on the keys, both verified against mise 2026.9.14: the registry key for OpenTofu is `opentofu` (not `tofu`) and for Docker is `docker-cli` (not `docker`), and **the versions are what the constraint governs — a key rename is not a version change**. `python` is deliberately **not** pinned (nothing in Phase 1 needs a specific Python; `python3` from the OS is enough for the `json` parsing in the scripts). `mise` is a bootstrap prerequisite, not a pinned tool — it cannot manage itself. `atlantis` is **not** in `.tool-versions` because mise has no registry entry for it and nothing in Phase 1 invokes the CLI; the meaningful Atlantis pin is the Helm chart version `0.28.0` in the Task 10 module. GNU Make **4** is assumed everywhere: macOS's default 3.81 runs each recipe line in a separate shell and breaks the heredoc recipes.
 - **Namespace names are fixed:** `argocd`, `atlantis`, `ministack`, `vault`, `monitoring`, `registry`, `external-secrets`, `platform-system` (the 8 platform namespaces), plus the 3 application namespaces `dev`, `staging`, `prod`. **All eleven are created by OpenTofu in Task 4** from one `for_each` over `local.platform_namespaces` in `tofu/main.tf` — that list is the single source of truth. OpenTofu owns all eleven and every `helm_release` passes `create_namespace = false`, so no chart and no tool races another for the same object. (The application namespaces are created empty in Phase 1; Phase 2 populates them. Their `AppProject` definitions also ship in Phase 1.) The Makefile's `NAMESPACES` variable is a human-readable mirror of the platform eight and is **not** authoritative — see ADR-0002.
 - **Every deployed workload is Helm-installed by OpenTofu**, not by hand. No `kubectl apply` of component manifests in the steady state — the only exception is ArgoCD bootstrapping itself (documented bootstrap is legitimate and is what the bootstrap module does).
@@ -562,8 +562,13 @@ done
 # 1.34.0: PIPESTATUS=141 0.) The context check above uses the same capture form
 # for the same reason: it passes today only because kubectl's output is small
 # enough to fit the pipe buffer before `grep -q` exits, which is luck, not
-# correctness. Two safe forms: capture first, as below, or drop `-q` and check
-# the full read's exit code.
+# correctness.
+#
+# Capture where it puts the text in a VARIABLE and grep via a herestring
+# (`grep ... <<<"$var"`) — there is then no producer process left to SIGPIPE.
+# Writing to a temp file and then `cat file | grep` is NOT safe: `cat` is a real
+# producer and reintroduces the identical race (verified). The other safe form
+# is to drop `-q` and check the full read's exit code.
 addons="$(minikube -p "$PROFILE" addons list)"
 # The pattern MUST anchor the addon-name column. Unanchored
 # `grep -q "$addon.*enabled"` matches any row merely *starting with* the addon
@@ -883,13 +888,11 @@ locals {
 ```hcl
 output "endpoints" {
   description = "Map of component name to local endpoint URL. Extended by each component task."
-  type        = map(string)
   value       = {}
 }
 
 output "namespaces" {
   description = "Namespaces created by the platform modules."
-  type        = list(string)
   value       = []
 }
 ```
@@ -917,18 +920,52 @@ has an obvious place to live. It is documentation, not loaded by OpenTofu:
 path = "environments/local/terraform.tfstate"
 ```
 
-Do **not** create a `backend.tf` under `tofu/environments/local/`. That directory holds
-values and locals, not a module, so a second backend block there would be inert and
-confusing.
+Do **not** create a `backend.tf` under `tofu/environments/local/`. A second backend block
+there would be inert and confusing.
+
+**`environments/local` IS a real module, and it must be.** It is called by the root as
+`module "local" { source = "./environments/local" }`, and its `outputs.tf` re-exports the
+overrides as outputs the root passes to the component modules. The reason is not tidiness:
+the **Phase 1 exit gate** is "open a PR editing `tofu/environments/local/overrides.tf` and
+read the Atlantis plan comment" (`docs/onboarding.md` §4, exit criterion 2). If this file
+were inert, that edit would produce an **empty plan** and the criterion could not be met —
+the one manual proof that the webhook, tunnel, PAT, repo lock and `dir: tofu` all work
+together would silently prove nothing. A deviation file that no tool reads cannot be the
+subject of a plan review.
+
+`locals` do not cross a module boundary, so `overrides.tf` keeps its `locals` block and
+`outputs.tf` forwards each one as an `output` of the same name.
 
 Initialize from the repo root with `tofu -chdir=tofu init`, which resolves the root
 module's backend relative to `tofu/`.
+
+**Wire `minikube_addons` here, in Task 3.** The module exists from Task 2 but nothing
+calls it until this task, so before this `module` block its `check` block never evaluates
+— a `tofu plan` shows no addon assertion at all. Add it as the first module in
+`tofu/main.tf`:
+
+```hcl
+module "minikube_addons" {
+  source = "./modules/minikube_addons"
+
+  addons = ["ingress", "metrics-server"]
+}
+```
+
+It creates no resources; it only asserts the addon baseline matches. Remember that a
+failed `check` warns and `plan` still exits 0, so this is a signal, not a gate.
 
 `tofu/environments/local/overrides.tf`:
 
 ```hcl
 # Local-profile overrides. Everything here is a deliberate deviation from
 # a production posture, and each line says why.
+#
+# This file is LIVE: it is the subject of the Phase 1 Atlantis exit criterion
+# ("open a PR editing this file, read the plan comment"). Editing a value here
+# must produce a non-empty `tofu plan` diff. `outputs.tf` in this same directory
+# forwards each local as a module output, and the root passes them to the
+# component modules.
 locals {
   vault_dev_mode   = true   # single unseal key, in-memory storage: disposable by design
   prometheus_retention = "2d"  # 30d retention is a production value; 2d keeps the laptop usable
@@ -937,6 +974,21 @@ locals {
   ministack_replica_count = 1
 }
 ```
+
+`tofu/environments/local/outputs.tf` — one output per local, same name and type:
+
+```hcl
+output "vault_dev_mode"                 { value = local.vault_dev_mode }
+output "prometheus_retention"           { value = local.prometheus_retention }
+output "prometheus_persistence_enabled" { value = local.prometheus_persistence_enabled }
+output "atlantis_replica_count"         { value = local.atlantis_replica_count }
+output "ministack_replica_count"        { value = local.ministack_replica_count }
+```
+
+Note the absence of `type =` on every output: OpenTofu 1.7's `output` block does not
+support it (that is a Terraform 1.3+ feature and hard-errors here), while `variable`
+blocks still accept `type`. `tofu/environments/local/outputs.tf` is the first file a
+later task will copy from, so getting this shape wrong propagates.
 
 ### Step 8: Initialize and validate — green state
 
@@ -1041,7 +1093,6 @@ variable "create" {
 ```hcl
 output "name" {
   description = "The namespace that was created."
-  type        = string
   value       = var.name
 }
 ```
@@ -1129,7 +1180,6 @@ variable "vault_token" {
 ```hcl
 output "crd_names" {
   description = "CRDs the operator installs — asserted by the verify script."
-  type        = list(string)
   value = [
     "clustersecretstores.external-secrets.io",
     "externalsecrets.external-secrets.io",
@@ -1168,29 +1218,23 @@ spec:
 
 ### Step 4: Wire namespaces into `tofu/main.tf`
 
-Append:
+Append to `tofu/main.tf`:
 
 ```hcl
-locals {
-  # All eleven namespaces, including dev/staging/prod. The application
-  # namespaces are created here rather than waiting for ArgoCD to sync the
-  # Kustomize manifests, so `make verify` has a deterministic cluster to
-  # check immediately after `tofu apply` instead of racing a GitOps sync.
-  platform_namespaces = [
-    "argocd",
-    "atlantis",
-    "ministack",
-    "vault",
-    "monitoring",
-    "registry",
-    "external-secrets",
-    "platform-system",
-    "dev",
-    "staging",
-    "prod",
-  ]
-}
+> **`local.platform_namespaces` is NOT re-declared here.** It already exists in
+> `tofu/main.tf` from Task 3, and it has to: the namespace list is fixed *before* any
+> namespace is created, because that is the one decision a later task cannot recover if it
+> turns out wrong. Declaring it a second time in a second `locals` block is a hard HCL
+> error — `Duplicate local value definition` / `Attribute redefined` — so the cluster would
+> not come up at all.
+>
+> Task 4 adds the two `module` blocks below and nothing else to `tofu/main.tf`. The list
+> itself is unchanged: all eleven names, platform eight plus `dev`, `staging`, `prod`. The
+> application namespaces are created here rather than waiting for ArgoCD to sync the
+> Kustomize manifests, so `make verify` has a deterministic cluster to check immediately
+> after `tofu apply` instead of racing a GitOps sync.
 
+```hcl
 module "namespaces" {
   source   = "./modules/namespace"
   for_each = toset(local.platform_namespaces)
@@ -1231,12 +1275,15 @@ chain guarantees.
 ```hcl
 output "namespaces" {
   description = "Namespaces created by the platform modules."
-  type        = list(string)
   value       = sort([for ns in module.namespaces : ns.name])
 }
 ```
 
-Replace the empty `namespaces` output from Task 3 with this.
+Replace the empty `namespaces` output from Task 3 with this. Note the **absent
+`type =`** — do not add one back. OpenTofu 1.7's `output` block does not accept it
+(that is a Terraform 1.3+ feature and hard-errors as `Unsupported argument`), and this
+block replaces a Task 3 block that carried exactly the argument the implementer there
+had to remove. `variable` blocks still take `type`; this is `output`-only.
 
 ### Step 6: Create the Kustomize manifest for ArgoCD to sync
 
@@ -1913,13 +1960,11 @@ variable "namespace_dependency" {
 ```hcl
 output "password_file" {
   description = "Path to the generated admin password file (mode 0600)."
-  type        = string
   value       = local_file.admin_password.filename
 }
 
 output "namespace" {
   description = "Namespace ArgoCD runs in."
-  type        = string
   value       = helm_release.argocd.namespace
 }
 ```
@@ -2052,7 +2097,6 @@ Extend `tofu/outputs.tf`:
 ```hcl
 output "argocd_password_file" {
   description = "Path to the ArgoCD admin password file."
-  type        = string
   value       = module.argocd.password_file
 }
 
@@ -2064,12 +2108,16 @@ output "endpoints" {
     else. Keys: argocd, atlantis, grafana, prometheus, vault, ministack,
     registry.
   EOT
-  type        = map(string)
   value = {
     argocd = "https://localhost:8081"
   }
 }
 ```
+
+Note the **absent `type =`** — do not add one back. OpenTofu 1.7's `output` block does
+not accept it (a Terraform 1.3+ feature, hard-erroring as `Unsupported argument`). Tasks 4
+through 9 all edit this one block, and Task 8 is where the last edit lands, so the
+temptation to "tidy" it recurs once per task. `variable` blocks still take `type`.
 
 ### Step 6: Apply and verify — green state
 
@@ -2675,7 +2723,8 @@ Edit the `endpoints` block already in `tofu/outputs.tf` (added by Task 6) in pla
 ```hcl
 output "endpoints" {
   # description unchanged from Task 6
-  type = map(string)
+  # NOTE: no `type =` here. OpenTofu 1.7's `output` block does not accept it —
+  # that is a Terraform 1.3+ feature and hard-errors on the pinned version.
   value = {
     argocd     = "https://localhost:8081"
     grafana    = "http://localhost:3000"
@@ -2686,7 +2735,6 @@ output "endpoints" {
 
 output "grafana_password_file" {
   description = "Path to the generated Grafana admin password file."
-  type        = string
   value       = module.prometheus.grafana_password_file
 }
 ```
