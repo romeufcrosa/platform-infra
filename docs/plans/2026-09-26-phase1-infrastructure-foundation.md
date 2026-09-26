@@ -671,18 +671,31 @@ Expected: `T2 CHECK PASSED`. Also confirm re-running is safe: `./scripts/setup-m
 
 ### Step 5: Add the addon Terraform module (declarative record)
 
-`tofu/modules/minikube_addons/main.tf` — the addons are applied by the script (minikube addons are a cluster-lifecycle concern, not a resource OpenTofu can manage), so this module exists to *record and assert* the desired addon set:
+`tofu/modules/minikube_addons/main.tf` — the addons are applied by the script (minikube addons are a cluster-lifecycle concern, not a resource OpenTofu can manage), so this module exists to *record* the desired addon set and assert that a **caller** passes the list this module expects:
+
+> **Read this before trusting the check: it cannot see the cluster.**
+> This assertion compares the caller's `addons` list against a literal in this file.
+> Both sides are literals in the same repository, so it can only fail if someone edits
+> one of them. **Minikube addon state is not exposed through the Kubernetes API**, so
+> there is no `data` source and no `kubernetes_*` resource that could read the real state
+> of an addon — nothing in OpenTofu *can* detect that an addon was disabled on a running
+> cluster. What this check genuinely catches is a caller wiring the wrong list into the
+> module. That is worth having, and it is much less than "detects drift". Real detection
+> lives in `scripts/setup-minikube.sh`, which is the only thing that can see the truth.
+>
+> An OpenTofu `check` block also reports a failed assertion as a **Warning**, not an
+> error: `tofu plan` still exits 0 (verified against OpenTofu 1.7.0 on 2026-09-26). So
+> even a real failure is a signal, not a gate — do not write CI that relies on the exit
+> code. Anything that must hard-fail belongs in a `precondition` inside a resource, or in
+> the shell script.
 
 ```hcl
-# Records the addon set the cluster is expected to have. Applied by
-# scripts/setup-minikube.sh; this module WARNS on drift if the expected list
-# and the module input ever diverge.
-#
-# An OpenTofu `check` block reports a failed assertion as a Warning, not an
-# error: `tofu plan` still exits 0 (verified against OpenTofu 1.7.0 on
-# 2026-09-26). So this is a *signal*, not a gate — do not write CI that relies
-# on the exit code to catch addon drift. Anything that must hard-fail belongs
-# in a `precondition` inside a resource, or in the shell script.
+# Records the addon set this project expects. Applied by
+# scripts/setup-minikube.sh, which is the only component that can observe the
+# real cluster. This module asserts that a caller passes the list recorded
+# here — it does NOT assert anything about the cluster itself, because minikube
+# addon state is not exposed through the Kubernetes API and OpenTofu has no
+# data source that could read it.
 locals {
   expected_addons = toset(["ingress", "metrics-server"])
 }
@@ -690,7 +703,7 @@ locals {
 check "addons_match" {
   assert {
     condition     = toset(var.addons) == local.expected_addons
-    error_message = "Addon set drifted from the documented baseline (ingress, metrics-server)."
+    error_message = "Caller passed an addon list that differs from this module's recorded baseline (ingress, metrics-server). This is a wiring mismatch, not cluster drift."
   }
 }
 ```
@@ -951,8 +964,13 @@ module "minikube_addons" {
 }
 ```
 
-It creates no resources; it only asserts the addon baseline matches. Remember that a
-failed `check` warns and `plan` still exits 0, so this is a signal, not a gate.
+It creates no resources. It asserts that the caller passes the addon list the module
+records — and note what that is **not**: it cannot detect an addon being disabled on the
+running cluster, because minikube addon state is not exposed through the Kubernetes API and
+OpenTofu has no data source for it. Wiring this module makes the *declaration* live, which is
+what was previously missing; it does not turn a check that cannot see the cluster into one
+that can. Real detection is `scripts/setup-minikube.sh`. Remember also that a failed `check`
+warns and `plan` still exits 0, so this is a signal, not a gate.
 
 #### Wire `local` in too — the first consumer arrives in Task 8
 
