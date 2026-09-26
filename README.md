@@ -98,10 +98,22 @@ not need a fork:
 The addon set is also recorded declaratively in
 [`tofu/modules/minikube_addons/`](tofu/modules/minikube_addons/). The addons themselves
 are applied by the script — minikube addons are a cluster-lifecycle concern that OpenTofu
-has no resource for — so the module does not manage them. It *asserts* them: the `check`
-block compares the caller's `addons` list against the documented baseline and warns when
-they drift. Note that an OpenTofu `check` block reports drift as a **warning**; the plan
-still exits `0`, so treat the warning as the signal rather than the exit code.
+has no resource for — so the module does not manage them.
+
+> **What that module's `check` block can and cannot do.** It compares the `addons`
+> list the root passes in against a literal recorded in the module. **Both sides
+> are literals in this repository.** minikube's addon state is not exposed
+> through the Kubernetes API, so there is no `data` source that could read the
+> truth, and the check **cannot detect an addon that was disabled on the running
+> cluster.** It can only fail if someone edits one of the two literals and forgets
+> the other. Its value is caller-wiring: it guarantees the root keeps passing the
+> documented baseline, so changing the call site has to be deliberate.
+>
+> To check the cluster's *actual* addon state, run
+> `minikube addons list -p platform` and compare — `scripts/setup-minikube.sh` is
+> the only thing in the repo that can observe it. Note also that an OpenTofu
+> `check` block reports a failure as a **warning**; the plan still exits `0`, so
+> treat the warning as the signal rather than the exit code.
 
 ## The OpenTofu root module
 
@@ -114,6 +126,36 @@ State lives at `tofu/environments/local/terraform.tfstate` via a `local` backend
 whose single block lives in [`tofu/backend.tf`](tofu/backend.tf).
 `tofu/environments/local/backend.hcl` is a hand-maintained reference copy of
 those settings, not something OpenTofu reads.
+
+**`tofu/environments/local/` is a real module, and `overrides.tf` is live.**
+It is called by the root as `module "local" { source = "./environments/local" }`.
+`locals` do not cross a module boundary, so `overrides.tf` keeps its `locals`
+block and `outputs.tf` alongside it re-exports each override as a module output;
+the root collects them into `local.local_overrides` and surfaces them through the
+`local_overrides` output.
+
+This matters because the **Phase 1 exit criterion** is "open a PR editing
+`tofu/environments/local/overrides.tf` and read the Atlantis plan comment".
+Editing an override produces a visible, non-empty `tofu plan` diff — that is what
+the criterion is checking. Were the file inert, the edit would produce an empty
+plan and the one manual proof that the webhook, tunnel, PAT, repo lock and
+`dir: tofu` all work together would silently prove nothing.
+
+Three places declare the same key set, and they must agree:
+
+| File | Declares |
+|------|----------|
+| `tofu/environments/local/overrides.tf` | the values themselves, in a `locals` block |
+| `tofu/environments/local/outputs.tf` | one `output` per local, re-exporting them |
+| `tofu/main.tf` | `local.local_overrides`, which reads every one of them |
+
+[`scripts/check-local-overrides.sh`](scripts/check-local-overrides.sh) enforces
+that agreement, and runs as part of `make fmt`. It fails if a local has no
+output, if an output is not consumed by `local_overrides`, or if a `type =`
+argument reappears on an output (a Terraform 1.3+ feature that hard-errors on
+OpenTofu 1.7 — see below). A key added to one file and forgotten in another is
+exactly the declared-but-not-wired defect this repo has produced three times, and
+this check is the guard against a fourth.
 
 **`tofu/main.tf` owns the namespace list.** `local.platform_namespaces` — the
 eight platform namespaces plus `dev`, `staging`, `prod`, eleven in total — is the
@@ -210,9 +252,10 @@ platform-infra/
 │   │   ├── prometheus/                # kube-prometheus-stack helm_release
 │   │   └── registry/                  # registry deployment + image pull secret
 │   └── environments/
-│       └── local/
-│           ├── backend.hcl           # tfvars for the local profile
-│           └── overrides.tf          # local-only tweaks (dev-mode Vault, small replicas)
+│       └── local/                     # a REAL module: module "local" in tofu/main.tf
+│           ├── backend.hcl           # reference copy of the backend settings (not loaded)
+│           ├── overrides.tf          # LIVE local-only tweaks (dev-mode Vault, small replicas)
+│           └── outputs.tf            # re-exports each override; locals do not cross modules
 ├── argocd/                            # GitOps application definitions (ArgoCD reads these)
 │   ├── projects/
 │   │   ├── platform-system.yaml
@@ -257,6 +300,7 @@ platform-infra/
 │   └── onboarding.md                  # <30 min new-dev path (Frontend 2)
 ├── scripts/
 │   ├── setup-minikube.sh
+│   ├── check-local-overrides.sh       # guard: overrides.tf stays wired (runs in make fmt)
 │   ├── port-forwards.sh
 │   ├── seed-vault.sh
 │   ├── bootstrap-ministack-queues.sh
@@ -283,7 +327,7 @@ plan that produced it.
   destroy-infra      Destroy all infrastructure managed by OpenTofu (destructive)
   port-forwards      Forward ArgoCD, Grafana, Vault, Ministack, registry to localhost
   verify             Run the Phase 1 success-criteria gate
-  fmt                Format and validate OpenTofu configuration
+  fmt                Format and validate OpenTofu config and the local-overrides guard
 ```
 
 ## Troubleshooting

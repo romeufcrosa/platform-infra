@@ -37,6 +37,7 @@ verify: ## Run the Phase 1 success-criteria gate
 	./scripts/verify-phase1.sh
 
 .PHONY: fmt
-fmt: ## Format and validate OpenTofu configuration
+fmt: ## Format and validate OpenTofu config and the local-overrides guard
 	tofu -chdir=tofu fmt -recursive
 	tofu -chdir=tofu validate
+	./scripts/check-local-overrides.sh

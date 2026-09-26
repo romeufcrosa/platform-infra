@@ -72,10 +72,44 @@ report "every output is consumed by local_overrides" "$missing_consumed"
 # feature). This is the first file later tasks copy from, so catch a regression
 # here rather than propagating it four times.
 #
-# Comments are stripped first, and the match is anchored to a real assignment.
-# The file's own header discusses `type` at length, so an unanchored search
-# would match this very check's documentation and fail forever.
-type_lines="$(grep -nE '^[[:space:]]*type[[:space:]]*=' <<<"$(grep -vE '^[[:space:]]*#' <<<"$outputs_block")" || true)"
+# The hard part is not the match, it is the false positives. This file's own
+# header discusses `type` in prose, so a naive grep matches the documentation.
+# Two things keep that from happening:
+#
+#   1. Comments are stripped first — both full-line (`# ...`) and trailing
+#      (`... = "x"  # note`) forms.
+#   2. What remains is scanned for a HCL *argument assignment*: the word `type`
+#      not preceded by an identifier character, not inside a double-quoted
+#      string, and followed by `=`. Prose like "no `type =` on any output"
+#      survives comment-stripping only inside strings, which rule 2 excludes.
+#
+# The pattern is deliberately NOT anchored to start-of-line. `tofu fmt` will
+# always put arguments on their own line, so an anchor there looks safe — but
+# it is a guard against a *defect*, and a guard with a known hole is worse than
+# one without: if a future hand-edit ever produces `output "x" { type = number`
+# on one line, the anchored form reports PASS. Red control G4 covers that case.
+type_lines="$(
+  # Strip comments outside of strings, then find `type` used as an argument.
+  awk '
+    {
+      line = $0
+      out = ""
+      in_str = 0
+      i = 1
+      n = length(line)
+      while (i <= n) {
+        c = substr(line, i, 1)
+        if (c == "\\" && in_str) { i += 2; continue }          # escaped char in string
+        if (c == "\"") { in_str = !in_str; i++; continue }    # string delimiter
+        if (!in_str && c == "#") break                          # comment: rest of line
+        if (!in_str && c == "/" && substr(line, i+1, 1) == "/") break
+        if (!in_str) out = out c
+        i++
+      }
+      if (out ~ /(^|[^a-zA-Z0-9_"])type[ \t]*=/) print NR ": " line
+    }
+  ' <<<"$outputs_block"
+)"
 if [ -z "$type_lines" ]; then
   printf '  PASS no `type =` on any output (OpenTofu 1.7 constraint)\n'
 else
