@@ -97,7 +97,7 @@ platform-infra/
 │   ├── variables.tf                   # every tunable input, typed
 │   ├── modules/
 │   │   ├── namespace/                 # one namespace, labelled
-│   │   ├── minikube_addons/           # registry/ingress/metrics-server addons
+│   │   ├── minikube_addons/           # ingress/metrics-server addons (registry comes from Task 8)
 │   │   ├── argocd/                    # helm_release + bootstrap Application
 │   │   ├── atlantis/                  # helm_release + repo creds + ngrok-less tunnel job
 │   │   ├── ministack/                 # helm_release or raw manifest + queue bootstrap Job
@@ -524,7 +524,22 @@ Expected: `make help` lists the eight targets; no ignored file appears in `git s
 
 **Interfaces:**
 - Consumes: `make` targets from Task 1; profile name `platform`
-- Produces: a running cluster at kubeconfig context `platform`, with addons `registry`, `ingress`, `metrics-server` enabled. Tasks 3+ run all `kubectl`/`helm`/OpenTofu provider calls under `minikube -p platform`.
+- Produces: a running cluster at kubeconfig context `platform`, with addons `ingress` and `metrics-server` enabled. Tasks 3+ run all `kubectl`/`helm`/OpenTofu provider calls under `minikube -p platform`.
+
+> **The `registry` addon is deliberately NOT in this baseline.** minikube's `registry`
+> addon deploys a `registry-proxy` DaemonSet pinned to
+> `gcr.io/k8s-minikube/kube-registry-proxy:0.0.6`, and that image has been **deleted
+> from gcr.io** — the tag list is empty and the manifest returns HTTP 404 (verified
+> 2026-09-26; minikube/k8s-minikube#21452 shows the same class of failure on 1.36.0,
+> closed `lifecycle/rotten`). The addon also has no configuration options, so there is
+> nothing to override. **The registry this project needs comes from
+> `tofu/modules/registry/` in Task 8 instead** — a Helm-installed registry in the
+> `registry` namespace, which is also the version the plan's own contract describes
+> (`registry_url` output, pull secret in all eight platform namespaces). The minikube
+> addon was always redundant with that; it is now both redundant and broken.
+> **Consequence:** nothing in Phase 1 depends on the minikube registry addon. The
+> `registry` namespace is created by OpenTofu in Task 4, and the registry workload
+> arrives in Task 8.
 
 ### Step 1: Write the failing check first
 
@@ -539,7 +554,7 @@ kubectl config get-contexts -o name | grep -qx "$PROFILE" || { echo "FAIL: conte
 for ns in kube-system; do
   kubectl --context "$PROFILE" get ns "$ns" >/dev/null || { echo "FAIL: ns $ns"; exit 1; }
 done
-for addon in registry ingress metrics-server; do
+for addon in ingress metrics-server; do
   minikube -p "$PROFILE" addons list | grep -q "$addon.*enabled" || { echo "FAIL: addon $addon not enabled"; exit 1; }
 done
 echo "T2 CHECK PASSED"
@@ -561,11 +576,17 @@ set -euo pipefail
 PROFILE="${MINIKUBE_PROFILE:-platform}"
 K8S_VERSION="${K8S_VERSION:-v1.30.2}"
 CPUS="${MINIKUBE_CPUS:-4}"
-MEMORY="${MINIKUBE_MEMORY:-8192mb}"
+# 7800mb, not 8192mb: minikube refuses a node larger than the Docker engine's
+# total memory, and a stock Docker Desktop install is allocated 8GB (7835MB
+# usable on a 16GB host). Override with MINIKUBE_MEMORY after raising the
+# Docker Desktop memory limit above 8GB.
+MEMORY="${MINIKUBE_MEMORY:-7800mb}"
 DISK="${MINIKUBE_DISK:-50g}"
-ADDONS=(registry ingress metrics-server)
+ADDONS=(ingress metrics-server)
+failed_addons=()
 
 log() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
+warn() { printf '\033[1;33mWARN:\033[0m %s\n' "$*" >&2; }
 die() { printf '\033[1;31mERROR:\033[0m %s\n' "$*" >&2; exit 1; }
 
 command -v minikube >/dev/null || die "minikube not found — run 'mise install' first"
@@ -588,8 +609,18 @@ fi
 
 for addon in "${ADDONS[@]}"; do
   log "Ensuring addon '$addon' enabled"
-  minikube addons enable "$addon" -p "$PROFILE" >/dev/null
+  # One failing addon must not abort the rest — under `set -e` a hard failure here
+  # leaves the remaining addons unasserted, so a re-run after one broken addon
+  # silently stops working. Collect failures and report them together at the end.
+  if ! minikube addons enable "$addon" -p "$PROFILE" >/dev/null; then
+    warn "addon '$addon' failed to enable (see above)"
+    failed_addons+=("$addon")
+  fi
 done
+
+if [ ${#failed_addons[@]} -gt 0 ]; then
+  die "failed to enable addon(s): ${failed_addons[*]}"
+fi
 
 kubectl config use-context "$PROFILE" >/dev/null
 log "Cluster ready. Context: $PROFILE"
@@ -604,7 +635,7 @@ Make it executable: `chmod +x scripts/setup-minikube.sh`
 ./scripts/setup-minikube.sh
 ```
 
-Expected: profile created, three addons enabled, `minikube status` shows `host: Running`, `kubelet: Running`.
+Expected: profile created, two addons enabled, `minikube status` shows `host: Running`, `kubelet: Running`.
 
 ### Step 4: Re-run the check — this is the green state
 
@@ -620,16 +651,22 @@ Expected: `T2 CHECK PASSED`. Also confirm re-running is safe: `./scripts/setup-m
 
 ```hcl
 # Records the addon set the cluster is expected to have. Applied by
-# scripts/setup-minikube.sh; this module fails the plan if the expected
-# list and the module input ever drift apart.
+# scripts/setup-minikube.sh; this module WARNS on drift if the expected list
+# and the module input ever diverge.
+#
+# An OpenTofu `check` block reports a failed assertion as a Warning, not an
+# error: `tofu plan` still exits 0 (verified against OpenTofu 1.7.0 on
+# 2026-09-26). So this is a *signal*, not a gate — do not write CI that relies
+# on the exit code to catch addon drift. Anything that must hard-fail belongs
+# in a `precondition` inside a resource, or in the shell script.
 locals {
-  expected_addons = toset(["registry", "ingress", "metrics-server"])
+  expected_addons = toset(["ingress", "metrics-server"])
 }
 
 check "addons_match" {
   assert {
     condition     = toset(var.addons) == local.expected_addons
-    error_message = "Addon set drifted from the documented baseline (registry, ingress, metrics-server)."
+    error_message = "Addon set drifted from the documented baseline (ingress, metrics-server)."
   }
 }
 ```
@@ -640,7 +677,7 @@ check "addons_match" {
 variable "addons" {
   description = "Addons expected to be enabled on the cluster."
   type        = list(string)
-  default     = ["registry", "ingress", "metrics-server"]
+  default     = ["ingress", "metrics-server"]
 }
 ```
 
