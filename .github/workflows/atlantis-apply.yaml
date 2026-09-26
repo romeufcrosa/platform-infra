@@ -1,0 +1,45 @@
+name: Atlantis Apply
+
+# PR-merged. Comments `atlantis apply` on the pull request so Atlantis, not
+# GitHub Actions, performs the apply — that is the whole point of running
+# Atlantis: the apply is serialised, project-scoped and audited on the PR.
+#
+# Atlantis is configured `execution_mode: plan` in Phase 1, so this workflow
+# comments the request but the server refuses to apply. The gate for Phase 1 is
+# a plan on the PR, not an apply; see task-10-brief.md.
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions:
+  # `pull-requests: write` is required to comment on the pull request. It is
+  # the only write scope this workflow needs.
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: atlantis-apply-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    name: Comment `atlantis apply` on the merged pull request
+    if: ${{ github.event.pull_request.merged == true }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report that the apply hook is not configured yet
+        if: ${{ secrets.ATLANTIS_TOKEN == '' }}
+        run: echo "ATLANTIS_TOKEN is not configured; skipping (see docs/runbooks)."
+      - name: Comment the apply command
+        if: ${{ secrets.ATLANTIS_TOKEN != '' }}
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.ATLANTIS_TOKEN }}
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              body: '```\n atlantis apply\n```'
+            });

@@ -1,0 +1,16 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    labels: [dependencies]
+  # Task 3 declared the providers (helm, kubernetes, random, tls, local) and
+  # tofu/.terraform.lock.hcl pins them, so the OpenTofu provider bumps are
+  # real. The `gomod` block from the brief was dropped: this repo has no
+  # go.mod in Phase 1 and Dependabot errors on a directory with no manifest.
+  - package-ecosystem: terraform
+    directory: "/tofu"
+    schedule:
+      interval: weekly
+    labels: [dependencies]

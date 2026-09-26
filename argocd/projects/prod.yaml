@@ -1,0 +1,39 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: prod
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  description: Production environment - protected, manual promotion
+  sourceRepos:
+    - '*'
+  destinations:
+    - namespace: 'prod'
+      server: '*'
+  clusterResourceWhitelist:
+    - group: '*'
+      kind: '*'
+  namespaceResourceWhitelist:
+    - group: '*'
+      kind: '*'
+  # Production is protected: only these roles may sync, and roles are bound
+  # to the platform team rather than to all authenticated users.
+  #
+  # ArgoCD RBAC policies are evaluated in order and the LAST match wins, so the
+  # catch-all `deny` has to stay last. Moving it above the two `allow` lines
+  # would deny everyone, including the platform team, and the failure would be
+  # silent — a sync that simply never appears.
+  roles:
+    - name: platform-team
+      description: Platform team members may sync production
+      policies:
+        - p, proj:prod:devops, sync, prod/*, allow
+        - p, proj:prod:platform-team, sync, prod/*, allow
+        - p, proj:prod:*, sync, prod/*, deny
+      groups:
+        # The OIDC group name that carries these roles. Task 12 creates the
+        # GitHub teams; until then this is a name ArgoCD will never match,
+        # which fails closed (nobody can sync prod) rather than open.
+        - platform-team

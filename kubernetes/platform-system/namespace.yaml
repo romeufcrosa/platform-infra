@@ -1,0 +1,39 @@
+# The three application namespaces. `platform-system` and `external-secrets`
+# are NOT declared here: both are already declared in
+# platform/external-secrets.yaml (Task 4), and a Kustomize base cannot hold the
+# same resource twice — `kubectl kustomize` fails with "may not add resource
+# with an already registered id". This file is the remainder of the eleven
+# namespaces OpenTofu owns, not a second copy of the list.
+#
+# The label set below MUST mirror `local.common_labels` in tofu/main.tf and the
+# namespace module's `platform.environment` override for dev/staging/prod
+# (tofu/main.tf labels an application namespace with its own name, a platform
+# namespace with the environment). `kubernetes.io/metadata.name` is added by
+# the apiserver and is deliberately absent. If these three labels drift, Task 6's
+# ArgoCD sync strips the difference and the cluster sits in a permanent diff.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dev
+  labels:
+    app.kubernetes.io/part-of: platform-learning-ecosystem
+    app.kubernetes.io/managed-by: opentofu
+    platform.environment: dev
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: staging
+  labels:
+    app.kubernetes.io/part-of: platform-learning-ecosystem
+    app.kubernetes.io/managed-by: opentofu
+    platform.environment: staging
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: prod
+  labels:
+    app.kubernetes.io/part-of: platform-learning-ecosystem
+    app.kubernetes.io/managed-by: opentofu
+    platform.environment: prod

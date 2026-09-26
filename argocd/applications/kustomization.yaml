@@ -1,0 +1,8 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# No `namespace:` field, for the same reason as argocd/projects: the
+# transformer rewrites metadata.name, and the Application already declares
+# `namespace: argocd` itself.
+resources:
+  - platform-system.yaml

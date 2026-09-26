@@ -1,0 +1,36 @@
+# The AppProject the platform-system Application syncs through. It is the
+# union of every namespace a platform component can land in. The three
+# application namespaces (dev, staging, prod) are deliberately absent: they
+# belong to their own projects, and a destination listed here would let a
+# platform component write into a production namespace by accident.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: platform-system
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  description: Platform components managed by OpenTofu and synced by ArgoCD
+  sourceRepos:
+    - '*'
+  destinations:
+    - namespace: 'argocd'
+      server: '*'
+    - namespace: 'atlantis'
+      server: '*'
+    - namespace: 'ministack'
+      server: '*'
+    - namespace: 'vault'
+      server: '*'
+    - namespace: 'monitoring'
+      server: '*'
+    - namespace: 'registry'
+      server: '*'
+    - namespace: 'external-secrets'
+      server: '*'
+    - namespace: 'platform-system'
+      server: '*'
+  clusterResourceWhitelist:
+    - group: '*'
+      kind: '*'

@@ -1,0 +1,35 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# NOTE: there is deliberately NO `namespace:` field here, and no
+# `commonLabels:`/`managed-by: argocd`. Both were in the Task 5 brief and both
+# are wrong against the real cluster; see the report.
+#
+#   * `namespace: platform-system` rewrites metadata.name on a Namespace
+#     object. Verified with kustomize v5.0.4 (bundled in kubectl 1.30.2): a
+#     base with `namespace: platform-system` and two Namespace resources
+#     fails outright with "namespace transformation produces ID conflict",
+#     because every Namespace is rewritten to the same name. This base
+#     declares five of them.
+#   * `commonLabels: {app.kubernetes.io/managed-by: argocd}` overwrites the
+#     `managed-by: opentofu` that OpenTofu (Task 4) puts on all eleven
+#     namespaces. Verified: kustomize replaces an existing label value, it
+#     does not merge. ArgoCD would then own the label and OpenTofu would
+#     fight it on the next apply — a permanent diff in both directions.
+#
+# Each component manifest therefore declares its own namespace and its own
+# labels. The base still stamps `part-of` on everything, because that value is
+# identical on every resource in the repo and cannot drift.
+labels:
+  - includeSelectors: false
+    pairs:
+      app.kubernetes.io/part-of: platform-learning-ecosystem
+
+resources:
+  - namespace.yaml
+  - platform/external-secrets.yaml
+  # Each component task appends its manifest here:
+  #   platform/ministack.yaml     (Task 7)
+  #   platform/vault.yaml         (Task 9)
+  #   platform/prometheus.yaml    (Task 8)
+  #   platform/registry.yaml      (Task 8)

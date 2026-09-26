@@ -45,3 +45,34 @@ fmt: ## Format and validate OpenTofu config and the local-overrides guard
 .PHONY: test-guard
 test-guard: ## Red/green controls for the local-overrides guard
 	./scripts/test-check-local-overrides.sh
+
+.PHONY: validate
+validate: ## Run the same checks as CI: tofu fmt/validate, kustomize build, helm template, yamllint
+	@helm repo add argo https://argoproj.github.io/argo-helm 2>/dev/null || true
+	@helm repo add runatlantis https://runatlantis.github.io/helm-charts 2>/dev/null || true
+	@helm repo add hashicorp https://helm.releases.hashicorp.com 2>/dev/null || true
+	@helm repo add prometheus-community https://prometheus-community.github.io/helm-charts 2>/dev/null || true
+	@helm repo update >/dev/null
+	tofu -chdir=tofu fmt -check -recursive
+	tofu -chdir=tofu init -backend=false -input=false >/dev/null
+	tofu -chdir=tofu validate
+	kubectl kustomize kubernetes/platform-system >/dev/null && echo "kustomize: platform-system OK"
+	kubectl kustomize argocd/applications >/dev/null && echo "kustomize: applications OK"
+	kubectl kustomize argocd/projects >/dev/null && echo "kustomize: projects OK"
+	@failed=""; \
+	for pair in \
+	  "argocd argo/argo-cd" \
+	  "atlantis runatlantis/atlantis" \
+	  "vault hashicorp/vault" \
+	  "prometheus prometheus-community/kube-prometheus-stack"; do \
+	  name="$${pair%% *}"; chart="$${pair#* }"; \
+	  printf 'helm: %s ... ' "$$name"; \
+	  if helm template "$$name" "$$chart" -f "helm/values/$$name.yaml" >/dev/null 2>&1; then \
+	    echo OK; \
+	  else \
+	    echo FAILED; \
+	    failed="$$failed $$name"; \
+	  fi; \
+	done; \
+	test -z "$$failed" || { echo "helm template failed for:$$failed"; exit 1; }
+	yamllint -c .yamllint.yaml . && echo "yamllint: OK"

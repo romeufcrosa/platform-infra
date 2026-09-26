@@ -1,0 +1,47 @@
+# The GitOps entry point: the one Application that makes this repository's
+# kubernetes/platform-system/ directory authoritative. Every other platform
+# manifest is synced through it.
+#
+# NOT A HOSTNAME: `repoURL` below is a placeholder token, not a real URL, and
+# no secret or hostname is committed here. The authoritative copy is rendered
+# by OpenTofu (Task 6) into
+# `kubernetes/platform-system/platform/argocd.yaml` from
+# `tofu/modules/argocd/bootstrap-application.yaml.tftpl`, which substitutes the
+# real repository URL on every apply. Apply this file by hand before Task 6
+# lands and you will install an Application that cannot fetch anything.
+#
+# The two files declare the same object (`platform-system` in namespace
+# `argocd`). That duplication is a plan defect, reported in
+# task-5-report.md — the plan should keep exactly one of them.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: platform-system
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: platform-system
+  source:
+    repoURL: REPLACE_WITH_REPO_URL
+    targetRevision: main
+    path: kubernetes/platform-system
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: platform-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - PruneLast=true
+  ignoreDifferences:
+    # OpenTofu writes these labels; ArgoCD must not fight it over them. Any
+    # label OpenTofu owns and ArgoCD does not agree on is a permanent diff.
+    - group: v1
+      kind: Namespace
+      jsonPointers:
+        - /metadata/labels/platform~1environment
+        - /metadata/labels/app.kubernetes.io~1managed-by
+        - /metadata/labels/app.kubernetes.io~1part-of

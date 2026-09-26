@@ -1,0 +1,47 @@
+name: Atlantis Plan
+
+# PR-only. Pings the in-cluster Atlantis server and records whether a plan was
+# produced. Atlantis is reachable through the tunnel Task 10 opens; until that
+# tunnel exists, ATLANTIS_URL is unset and this workflow skips instead of
+# failing the PR. A missing tunnel is a local-setup problem, not a code defect,
+# and must not be indistinguishable from a broken build.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: atlantis-plan-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  plan:
+    name: Request a plan from Atlantis
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report the pull request to Atlantis
+        if: ${{ secrets.ATLANTIS_URL == '' }}
+        run: echo "ATLANTIS_URL is not configured; skipping (see docs/runbooks)."
+      - name: Trigger the plan and record the result
+        if: ${{ secrets.ATLANTIS_URL != '' }}
+        env:
+          ATLANTIS_URL: ${{ secrets.ATLANTIS_URL }}
+          ATLANTIS_TOKEN: ${{ secrets.ATLANTIS_TOKEN }}
+          REPO: ${{ github.repository }}
+          PULL_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer ${ATLANTIS_TOKEN}" \
+            --header "Content-Type: application/json" \
+            --request POST "${ATLANTIS_URL}/api/plan" \
+            --data "$(jq -n \
+              --arg repo "${REPO}" \
+              --argjson number "${PULL_NUMBER}" \
+              --arg head "${HEAD_SHA}" \
+              '{head_commit: $head, pull_number: $number, repo: {name: $repo}}')" \
+            && echo "Plan requested; read the result with: make atlantis-logs"
