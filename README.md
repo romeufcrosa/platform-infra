@@ -9,7 +9,7 @@ External Secrets, kube-prometheus-stack, Ministack, and a local registry on mini
 |-----------|-------|-------|--------------|---------------|
 | Repository + toolchain | 1 | ✅ done | `make help` | 2026-09-26 |
 | minikube cluster | 1 | ⬜ todo | `make cluster-up` | — |
-| OpenTofu root module | 1 | ⬜ todo | `tofu validate` | — |
+| OpenTofu root module | 1 | ✅ done | `tofu validate` | 2026-09-26 |
 | Namespaces + External Secrets Operator | 1 | ⬜ todo | `kubectl get ns` | — |
 | CI + Kustomize + AppProjects | 1 | ⬜ todo | `make validate` | — |
 | ArgoCD | 1 | ⬜ todo | `argocd app list` | — |
@@ -103,6 +103,60 @@ block compares the caller's `addons` list against the documented baseline and wa
 they drift. Note that an OpenTofu `check` block reports drift as a **warning**; the plan
 still exits `0`, so treat the warning as the signal rather than the exit code.
 
+## The OpenTofu root module
+
+`tofu/` is the spine of the repo. Every component from the namespace foundation
+onward is attached to it as a `module` block, and `make deploy-infra` runs it.
+`make deploy-infra` must be the only thing that creates infrastructure —
+nothing here is ever applied by hand with `kubectl apply`.
+
+State lives at `tofu/environments/local/terraform.tfstate` via a `local` backend
+whose single block lives in [`tofu/backend.tf`](tofu/backend.tf).
+`tofu/environments/local/backend.hcl` is a hand-maintained reference copy of
+those settings, not something OpenTofu reads.
+
+**`tofu/main.tf` owns the namespace list.** `local.platform_namespaces` — the
+eight platform namespaces plus `dev`, `staging`, `prod`, eleven in total — is the
+single source of truth. The namespace module's `for_each` and the `namespaces`
+output both derive from it, and [ADR-0002](docs/adr/0002-single-minikube-cluster.md)
+makes it authoritative. The Makefile's `NAMESPACES` is a human-readable mirror
+that nothing consumes. OpenTofu owns all eleven; every `helm_release` passes
+`create_namespace = false`, so no chart and no tool races another for the same
+object.
+
+### Two HCL details that look like errors and are not
+
+Both of these contradict what a Terraform author would expect, so they are worth
+stating plainly. Both are verified against the pinned **OpenTofu 1.7.0**.
+
+**The block is spelled `terraform {`, not `tofu {`.** The rule that this repo uses
+OpenTofu and never Terraform is about the **binary you invoke** (`tofu`, never
+`terraform`), not the HCL block name. OpenTofu did not accept a `tofu` block
+until 1.8.0; on 1.7.0 it is a hard error:
+
+```
+Error: Unsupported block type
+  on backend.tf line 1:
+   1: tofu {
+Blocks of type "tofu" are not expected here.
+```
+
+**`output` blocks have no `type` argument.** `type = map(string)` on an output is
+a Terraform 1.3+ feature. OpenTofu's `output` block accepts only `value`,
+`description`, `sensitive`, `ephemeral`, `depends_on`, and `deprecated`, so
+declaring `type` fails `tofu validate`:
+
+```
+Error: Unsupported argument
+  on outputs.tf line 3, in output "endpoints":
+   3:   type        = map(string)
+An argument named "type" is not expected here.
+```
+
+Values are still type-checked where they are consumed, so the `endpoints` map and
+`namespaces` list keep the contract later tasks rely on. `variable` blocks *do*
+support `type` — that one is unchanged.
+
 ## Architecture
 
 The design this repo implements is
@@ -139,10 +193,12 @@ platform-infra/
 ├── README.md                          # the maintained status document
 ├── tofu/
 │   ├── versions.tf                    # required_version + required_providers
-│   ├── providers.tf                   # helm, kubernetes, random, tls (all configured)
+│   ├── providers.tf                   # helm, kubernetes, random, tls, local (all configured)
+│   ├── backend.tf                     # the root module's single `local` backend block
 │   ├── main.tf                        # wires every module, in dependency order
-│   ├── outputs.tf                     # endpoints, namespaces, ports (consumed by scripts)
+│   ├── outputs.tf                     # endpoints, namespaces (consumed by scripts)
 │   ├── variables.tf                   # every tunable input, typed
+│   ├── .terraform.lock.hcl            # committed — provider versions are part of the contract
 │   ├── modules/
 │   │   ├── namespace/                 # one namespace, labelled
 │   │   ├── minikube_addons/           # ingress/metrics-server addons (records the baseline)
@@ -206,8 +262,12 @@ platform-infra/
 │   ├── bootstrap-ministack-queues.sh
 │   ├── verify-phase1.sh               # the phase gate
 │   └── smoke-atlantis-webhook.sh      # (Frontend 2)
-└── .terraform.lock.hcl                # committed — provider versions are part of the contract
 ```
+
+> The lock file lives at **`tofu/.terraform.lock.hcl`**, not the repository root.
+> `tofu -chdir=tofu init` writes it beside the module it initialises, and it is
+> committed so the provider versions in the plan are the versions every machine
+> and CI run resolves.
 
 `docs/specs/` and `docs/plans/` are copies of the umbrella `fullstack/` originals, so this
 repo is self-contained: someone reading only `platform-infra` finds the design and the
