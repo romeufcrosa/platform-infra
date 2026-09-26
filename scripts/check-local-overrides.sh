@@ -70,7 +70,8 @@ report "every output is consumed by local_overrides" "$missing_consumed"
 # --- 3. no `type =` on any output --------------------------------------------
 # OpenTofu 1.7.0 rejects `type` in an output block (it is a Terraform 1.3+
 # feature). This is the first file later tasks copy from, so catch a regression
-# here rather than propagating it four times.
+# here rather than propagating it into the eight module outputs.tf files Tasks
+# 4-10 add.
 #
 # The hard part is not the match, it is the false positives. This file's own
 # header discusses `type` in prose, so a naive grep matches the documentation.
@@ -87,34 +88,71 @@ report "every output is consumed by local_overrides" "$missing_consumed"
 # always put arguments on their own line, so an anchor there looks safe — but
 # it is a guard against a *defect*, and a guard with a known hole is worse than
 # one without: if a future hand-edit ever produces `output "x" { type = number`
-# on one line, the anchored form reports PASS. Red control G4 covers that case.
-type_lines="$(
-  # Strip comments outside of strings, then find `type` used as an argument.
-  awk '
-    {
-      line = $0
-      out = ""
-      in_str = 0
-      i = 1
-      n = length(line)
-      while (i <= n) {
-        c = substr(line, i, 1)
-        if (c == "\\" && in_str) { i += 2; continue }          # escaped char in string
-        if (c == "\"") { in_str = !in_str; i++; continue }    # string delimiter
-        if (!in_str && c == "#") break                          # comment: rest of line
-        if (!in_str && c == "/" && substr(line, i+1, 1) == "/") break
-        if (!in_str) out = out c
-        i++
-      }
-      if (out ~ /(^|[^a-zA-Z0-9_"])type[ \t]*=/) print NR ": " line
-    }
-  ' <<<"$outputs_block"
-)"
-if [ -z "$type_lines" ]; then
-  printf '  PASS no `type =` on any output (OpenTofu 1.7 constraint)\n'
-else
-  printf '  FAIL `type =` found on an output block: %s\n' "$type_lines"
+# on one line, the anchored form reports PASS. Red control G2 in
+# scripts/test-check-local-overrides.sh covers that case.
+#
+# Scope is every `tofu/**/outputs.tf`, not just the local profile's. Tasks 4-10
+# add eight more, the `type =` prohibition has already been violated ten times
+# in the plan, and this script is that prohibition's only automated enforcement.
+# Scanning one file of three would let the other two regress in silence.
+#
+# The scan is per-file so the report can name the file. A `find` that matches
+# nothing is a silently vacuous check — the exact defect class this script
+# exists to prevent — so zero files is a FAIL, not a PASS.
+#
+# No `mapfile`/arrays: macOS ships bash 3.2, where `mapfile` does not exist.
+# `find`'s stderr is discarded so that a wrong root lands on the explicit
+# zero-files FAIL below rather than dying opaquely under `set -euo pipefail`
+# with no explanation — a guard that dies without saying why is one nobody can
+# act on.
+output_tf_files="$(find "$REPO_ROOT/tofu" -name outputs.tf -type f 2>/dev/null | sort || true)"
+
+if [ -z "$output_tf_files" ]; then
+  printf '  FAIL no `type =` scan: found zero tofu/**/outputs.tf files\n'
   status=1
+else
+  file_count="$(printf '%s\n' "$output_tf_files" | wc -l | tr -d ' ')"
+  printf '  scanning %s outputs.tf file(s) for `type =`\n' "$file_count"
+  type_lines=""
+  while IFS= read -r tf; do
+    [ -n "$tf" ] || continue
+    hits="$(
+      # Strip comments outside of strings, then find `type` used as an argument.
+      awk '
+        {
+          line = $0
+          out = ""
+          in_str = 0
+          i = 1
+          n = length(line)
+          while (i <= n) {
+            c = substr(line, i, 1)
+            if (c == "\\" && in_str) { i += 2; continue }          # escaped char in string
+            if (c == "\"") { in_str = !in_str; i++; continue }    # string delimiter
+            if (!in_str && c == "#") break                          # comment: rest of line
+            if (!in_str && c == "/" && substr(line, i+1, 1) == "/") break
+            if (!in_str) out = out c
+            i++
+          }
+          if (out ~ /(^|[^a-zA-Z0-9_"])type[ \t]*=/) print NR ": " line
+        }
+      ' "$tf"
+    )"
+    if [ -n "$hits" ]; then
+      rel="${tf#"$REPO_ROOT"/}"
+      type_lines+="${rel}"$'\n'
+      while IFS= read -r hit; do
+        [ -n "$hit" ] && type_lines+="    ${hit}"$'\n'
+      done <<<"$hits"
+    fi
+  done <<<"$output_tf_files"
+  if [ -z "$type_lines" ]; then
+    printf '  PASS no `type =` on any output (OpenTofu 1.7 constraint)\n'
+  else
+    printf '  FAIL `type =` found on an output block:\n'
+    printf '%s' "$type_lines"
+    status=1
+  fi
 fi
 
 printf '\n'

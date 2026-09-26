@@ -41,3 +41,7 @@ fmt: ## Format and validate OpenTofu config and the local-overrides guard
 	tofu -chdir=tofu fmt -recursive
 	tofu -chdir=tofu validate
 	./scripts/check-local-overrides.sh
+
+.PHONY: test-guard
+test-guard: ## Red/green controls for the local-overrides guard
+	./scripts/test-check-local-overrides.sh

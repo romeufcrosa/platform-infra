@@ -21,17 +21,12 @@ variable "helm_timeout" {
   default     = 900
 }
 
+# No reader until Task 10, which renders it into the generated `atlantis.yaml`
+# via `local_file.atlantis_repo_config`. Not an orphan — do not re-file.
 variable "atlantis_repo" {
   description = "GitHub repo Atlantis serves, as 'org/repo'."
   type        = string
   default     = ""
-}
-
-variable "atlantis_webhook_secret" {
-  description = "Shared secret Atlantis expects on GitHub webhook payloads."
-  type        = string
-  default     = ""
-  sensitive   = true
 }
 
 variable "argocd_admin_password" {
