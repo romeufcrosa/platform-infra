@@ -60,6 +60,19 @@ test-guard: ## Red/green controls for the local-overrides guard
 
 .PHONY: validate
 validate: ## Run the same checks as CI: tofu fmt/validate, kustomize build, helm template, yamllint
+	@# The chart versions below MUST match each module's `chart_version` default. An
+	@# unpinned `helm template` resolves to whatever the repo serves *today*, so the
+	@# gate can render a materially different object set than the one deployed
+	@# and still go green — argo/argo-cd unpinned was rendering 10.9.2 against a
+	@# module pinned to 6.7.18. A gate that validates the wrong chart is worse
+	@# than no gate, because it looks like coverage.
+	@#
+	@# A chart whose values file does not exist yet is SKIPped, not FAILED. The
+	@# list is deliberately ahead of the code: the values files for vault,
+	@# prometheus and atlantis land in Tasks 8, 9 and 10. Reporting those as
+	@# failures is noise that trains people to ignore this target, and "SKIP
+	@# (no helm/values/vault.yaml)" says plainly which task is outstanding. Once
+	@# a file exists the leg is real and a render failure is a real failure.
 	@helm repo add argo https://argoproj.github.io/argo-helm 2>/dev/null || true
 	@helm repo add runatlantis https://runatlantis.github.io/helm-charts 2>/dev/null || true
 	@helm repo add hashicorp https://helm.releases.hashicorp.com 2>/dev/null || true
@@ -73,13 +86,18 @@ validate: ## Run the same checks as CI: tofu fmt/validate, kustomize build, helm
 	kubectl kustomize argocd/projects >/dev/null && echo "kustomize: projects OK"
 	@failed=""; \
 	for pair in \
-	  "argocd argo/argo-cd" \
-	  "atlantis runatlantis/atlantis" \
-	  "vault hashicorp/vault" \
-	  "prometheus prometheus-community/kube-prometheus-stack"; do \
-	  name="$${pair%% *}"; chart="$${pair#* }"; \
-	  printf 'helm: %s ... ' "$$name"; \
-	  if helm template "$$name" "$$chart" -f "helm/values/$$name.yaml" >/dev/null 2>&1; then \
+	  "argocd argo/argo-cd 6.7.18" \
+	  "atlantis runatlantis/atlantis 6.16.0" \
+	  "vault hashicorp/vault 0.28.0" \
+	  "prometheus prometheus-community/kube-prometheus-stack 65.5.1"; do \
+	  name="$$(echo $$pair | cut -d' ' -f1)"; \
+	  chart="$$(echo $$pair | cut -d' ' -f2)"; \
+	  ver="$$(echo $$pair | cut -d' ' -f3)"; \
+	  vf="helm/values/$$name.yaml"; \
+	  printf 'helm: %s (%s) ... ' "$$name" "$$ver"; \
+	  if [ ! -f "$$vf" ]; then \
+	    echo "SKIP (no $$vf)"; \
+	  elif helm template "$$name" "$$chart" --version "$$ver" -f "$$vf" >/dev/null 2>&1; then \
 	    echo OK; \
 	  else \
 	    echo FAILED; \

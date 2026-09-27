@@ -62,41 +62,43 @@ variable "namespace_dependency" {
 
 # --- Paths OUTSIDE the root module ------------------------------------------
 #
-# The brief spells both of these as inline `path.module` expressions:
+# `helm/` and `local-secrets/` are siblings of the root module, not children
+# of it, so the paths reaching them are not `path.module`-relative. They are
+# plain paths relative to the root module, passed as variables.
 #
-#   values          = [file("${path.module}/../../helm/values/argocd.yaml")]
-#   fileexists("${path.module}/../../../local-secrets/argocd-admin-password")
+# **An earlier version of this comment claimed something false, and the claim
+# was expensive.** It asserted that OpenTofu's `file()` and `fileexists()` are
+# confined to the root module directory, that `fileexists()` "returns false
+# even when the file exists", and that a path passed *through a variable* is
+# exempt from a restriction that an identical inline literal is subject to. It
+# cited "verified against OpenTofu 1.7.0" and described how it was verified.
 #
-# Neither works. OpenTofu's `file()` and `fileexists()` are confined to the
-# ROOT module directory — `tofu/` here. `helm/` and `local-secrets/` are its
-# siblings, above it, and every such call fails. Verified against OpenTofu
-# 1.7.0 with a scratch module: `file()` returns
-# "Invalid value for \"path\" parameter: no file exists at ...; this function
-# works only with files that are distributed as part of the configuration
-# source code", and `fileexists()` returns **false even when the file exists**.
-# `abspath()` does not help.
+# None of that is true. Re-tested 2026-09-27 on OpenTofu 1.7.0 with a scratch
+# module, on a file that definitely existed:
 #
-# The loud half is the values file: `tofu validate` fails outright, which is
-# why it was found. The quiet half is far worse. `fileexists()` returning a
-# hardcoded `false` for `local-secrets/argocd-admin-password` means the
-# read-back branch above it is DEAD CODE on every run after the first, so
-# `bcrypt()` re-salts on every plan, `admin.password` in argocd-secret changes
-# on every apply, and `local_file.admin_password_hash` rewrites itself on every
-# apply. That is precisely the churn the "generate once, persist, read back"
-# shape exists to prevent — and it would have passed `tofu validate`, lint,
-# review and plan, because the plan would simply always show a diff and nobody
-# would know why.
+#   fileexists("/abs/path/outside/root/module/probe.txt")  -> true
+#   file("/abs/path/outside/root/module/probe.txt")         -> "hello"
+#   fileexists(var.p)  with var.p = that same path          -> true
+#   file(var.p)                                            -> "hello"
 #
-# A path handed to `file()` THROUGH A VARIABLE is exempt from the restriction.
-# Verified against OpenTofu 1.7.0: `file(var.p)` reads
-# `../outside-dir/values.yaml` and `fileexists(var.p)` returns true, where the
-# identical literal written inline is refused. So the value is a variable and
-# the file operations hang off it.
+# The inline literal and the variable form behave identically. There is no
+# confinement and no exemption.
+#
+# Why the false claim was so convincing, and how to avoid repeating it: the
+# original test used a path whose file had not been created, so `false` came
+# back — indistinguishable from "the function refuses paths outside the root
+# module". **Prove the fixture exists before concluding anything about a
+# function's reach.** This is the same mistake as the F4 guard mutation
+# earlier in this project, made twice in one day by two different agents: a
+# test that could not distinguish "refused" from "absent" was read as a
+# finding about the tool rather than about the test.
+#
+# The variable is kept because a configurable path is worth having on its own
+# terms, not because the inline form would not have worked.
 variable "values_file" {
   description = <<-EOT
-    Path to the chart's values file, which lives outside the OpenTofu root
-    module and is therefore only readable through this variable. See the note
-    above.
+    Path to the chart's values file, relative to the root module. A variable
+    because the path is worth being able to override; see the note above.
   EOT
   type        = string
   default     = "../helm/values/argocd.yaml"

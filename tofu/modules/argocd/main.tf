@@ -16,10 +16,10 @@ locals {
   # Task 10 writes the Atlantis webhook secret into. One `local-secrets/`, not
   # a second one — the .gitignore rule and the runbooks both name that path.
   #
-  # The path arrives through `var.local_secrets_dir` rather than an inline
-  # `path.module` expression because `file()`/`fileexists()` are confined to
-  # the OpenTofu root module and `local-secrets/` is above it. Read
-  # variables.tf before changing either of these back to a literal.
+  # The path arrives through `var.local_secrets_dir` so it can be overridden.
+  # An earlier comment here claimed `file()`/`fileexists()` were confined to
+  # the root module and that this variable was therefore required — that claim
+  # was false and has been tested and disproved; read variables.tf.
   #
   # `abspath()` because `local_file.filename` echoes back whatever it is given,
   # and the `password_file` output would otherwise be the relative string
@@ -35,13 +35,25 @@ resource "random_password" "argocd_admin" {
   length  = 32
   special = false # avoid shell-quoting hazards in kubectl exec one-liners
 
-  # After the first apply the two files above are the source of truth, so a
-  # re-rolled `result` would change nothing — but it would still show up as a
-  # permanent diff on every subsequent plan, and a plan that always shows a
-  # diff is a plan nobody reads. Freezing it keeps the run clean.
-  lifecycle {
-    ignore_changes = [result]
-  }
+  # No `lifecycle.ignore_changes = [result]` here. An earlier version had one,
+  # reasoning that a re-rolled `result` "would show up as a permanent diff on
+  # every subsequent plan". That is not what the provider does: the random
+  # provider generates `result` once and stores it in state, regenerating only
+  # when an *input* attribute changes. `length` and `special` are constant, so
+  # `result` is stable on its own. The provider says so explicitly —
+  #
+  #   The attribute result is decided by the provider alone and therefore there
+  #   can be no configured value to compare with. Including this attribute in
+  #   ignore_changes has no effect.
+  #
+  # which `tofu validate` prints as a warning on every run. A warning that has
+  # been read and dismissed is a warning nobody reads, so it goes.
+  #
+  # The consequence if the assumption above is ever wrong: the password would
+  # silently re-roll, `argocd-secret` would be rewritten with a hash of a
+  # password nobody was given, and login would break with no diff to explain
+  # it. The persisted files above are the real defence — they are read back
+  # first and take precedence over this resource entirely.
 }
 
 locals {
