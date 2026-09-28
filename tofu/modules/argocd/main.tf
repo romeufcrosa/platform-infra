@@ -203,7 +203,37 @@ resource "local_file" "bootstrap_application" {
   # `argocd/applications/` kustomization that already exists and that CI
   # already builds (`kubectl kustomize argocd/applications`) references this
   # path, so the rendered file needs no new wiring anywhere.
-  filename        = "${path.module}/../../argocd/applications/platform-system.yaml"
+  #
+  # `abspath()` is load-bearing, and so is the `../../../`. Both were wrong at
+  # different times and the file has been written to the wrong place twice.
+  #
+  # `path.module` is RELATIVE — it is `modules/argocd`, not an absolute path —
+  # and `local_file` resolves a relative filename against the process working
+  # directory, which under `-chdir=tofu` is `tofu/`. So the path walks
+  # `tofu/modules/argocd/` and each `..` pops one level.
+  #
+  # First attempt: `${path.module}/../../argocd/...`. That is
+  # `tofu/modules/argocd/../../` = **`tofu/`**, not the repo root — two `..`
+  # land back where the OpenTofu root module lives. The file was written to
+  # `tofu/argocd/applications/platform-system.yaml`, a stray directory INSIDE
+  # the root module, while the real one in the repo kept Task 5's placeholder.
+  #
+  # Second attempt: `abspath()` on the same two `..`. Made it absolute, and the
+  # absolute path was absolute in the WRONG PLACE, because the relative part
+  # was still one level short. I asserted that was fixed without rendering it.
+  # The correction is three `..`, and the evidence is:
+  #
+  #   $ cd modules/argocd/../../  && pwd   ->  .../platform-infra/tofu
+  #   $ cd modules/argocd/../../../ && pwd ->  .../platform-infra
+  #
+  # Nothing failed on any of the three applies. The apply reported success, the
+  # Application synced, and the wrong file was written one or two levels up
+  # from where every reader, every kustomization and every runbook expects it.
+  # Compare this with `local_secrets_dir` at the top of the file, which was
+  # right from the start: its default is `../local-secrets`, one `..` from
+  # `tofu/`, because it starts at the root module rather than at `path.module`.
+  # **A path is not correct because it looks right. Render it and look.**
+  filename        = abspath("${path.module}/../../../argocd/applications/platform-system.yaml")
   content         = local.bootstrap_application_yaml
   file_permission = "0644"
 }
@@ -236,5 +266,55 @@ resource "kubernetes_manifest" "bootstrap_application" {
   # there; the second is the ordinary full apply, whose plan now resolves
   # `Application` fine. This edge is a property of the provider, not of this
   # module, so no value or ordering inside the module removes it.
+  depends_on = [helm_release.argocd]
+}
+
+# --- The AppProject the Application syncs THROUGH ---------------------------
+#
+# A committed file is not a created object. Task 5 committed
+# `argocd/projects/platform-system.yaml`; nothing in the repository ever ran
+# `kubectl apply` on it, and the ArgoCD chart installs the `AppProject` CRD and
+# nothing more. So the Application below came up against a project that did not
+# exist, and ArgoCD reported it as a spec validation rather than a failure:
+#
+#   InvalidSpecError: Application referencing project platform-system
+#   which does not exist
+#
+# The Application sat at SYNC STATUS Unknown / HEALTH STATUS Unknown
+# indefinitely, with no retry, no backoff and nothing in any pod log — because
+# it is not an error, it is a rejected spec. Every other green signal in the
+# system (pods Running, helm_release deployed, apply complete) coexisted with
+# a completely inert GitOps loop. This is the same lesson as F6, one level up:
+# the fix for "nothing creates the Application" is not "commit the
+# Application" but "create the Application", and the same is true one step
+# further back.
+#
+# It is created HERE, by OpenTofu, rather than synced by ArgoCD, because there
+# is a boot-ordering constraint: an Application cannot sync until its project
+# exists, so the project cannot be one of the things the Application syncs.
+locals {
+  app_project_yaml = templatefile(
+    "${path.module}/bootstrap-appproject.yaml.tftpl",
+    {},
+  )
+}
+
+resource "local_file" "app_project" {
+  # Same rendered-once, written-twice shape as the Application: the committed
+  # file a human reads, and the live object, from one string. Same `abspath()`
+  # and same three `..` — read the long comment on
+  # `local_file.bootstrap_application` above before changing either.
+  filename        = abspath("${path.module}/../../../argocd/projects/platform-system.yaml")
+  content         = local.app_project_yaml
+  file_permission = "0644"
+}
+
+resource "kubernetes_manifest" "app_project" {
+  manifest = yamldecode(local.app_project_yaml)
+
+  # Same plan-time GVK resolution as the Application: AppProject and
+  # Application are the same CRD group, installed by the same chart, so
+  # `depends_on` the release for the same reason and hits the same wall on a
+  # cluster where the CRD is genuinely absent.
   depends_on = [helm_release.argocd]
 }
