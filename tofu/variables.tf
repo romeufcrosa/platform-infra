@@ -39,7 +39,26 @@ variable "argocd_admin_password" {
 variable "ministack_image" {
   description = "Pinned Ministack image tag. Never 'latest' (Global Constraint)."
   type        = string
-  default     = "ghcr.io/ministack/ministack:v0.9.0"
+  # CORRECTED 2026-09-28 by Task 7. This was `ghcr.io/ministack/ministack:v0.9.0`,
+  # which is wrong in two independent ways and failed silently in a third.
+  #
+  #   * Wrong organisation. Ministack publishes to Docker Hub as
+  #     `ministackorg/ministack`. `ghcr.io/ministack/ministack` is not where
+  #     the image is.
+  #   * Wrong version scheme. The current line is 1.5.x, not v0.9.0. The
+  #     newest verified tag is 1.5.17; 0.9.0 does not exist.
+  #   * Worst of the three: `module "ministack"` does
+  #     `split(":", var.ministack_image)[1]` and builds
+  #     `ministackorg/ministack:${image_tag}`. With the old default that
+  #     rendered `ministackorg/ministack:v0.9.0` — a plausible-looking string
+  #     pointing at an image that does not exist. `tofu validate` passed and
+  #     `tofu plan` exited 0. The failure would have surfaced only as
+  #     ImagePullBackOff, and the Job's wait loop would have masked it by
+  #     spinning until backoffLimit was spent.
+  #
+  # Verified 2026-09-28 against Docker Hub: tag 1.5.17 exists with linux/amd64
+  # and linux/arm64 manifests, and was pulled and run successfully.
+  default = "ministackorg/ministack:1.5.17"
 }
 
 variable "platform_infra_repo_url" {

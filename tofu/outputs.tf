@@ -24,7 +24,8 @@ output "endpoints" {
     registry.
   EOT
   value = {
-    argocd = "https://localhost:8081"
+    argocd    = "https://localhost:8081"
+    ministack = "http://localhost:4566"
   }
 }
 

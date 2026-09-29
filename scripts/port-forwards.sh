@@ -40,11 +40,11 @@ PROMETHEUS_PORT="${PROMETHEUS_PORT:-9090}"
 # pipefail promotes that to the script's exit status). Capturing first and
 # matching against the captured text avoids the whole class of bug.
 FORWARDS=(
+  "ministack/ministack        4566:4566  ministack"       # Task 7
   # "argocd/argocd-server        8081:443   argocd"          # Task 6
   # "monitoring/grafana         3000:80    grafana"         # Task 8
   # "monitoring/prometheus-server 9090:9090 prometheus"     # Task 8
   # "registry/registry          5000:5000  registry"        # Task 8
-  # "ministack/ministack        4566:4566  ministack"       # Task 7
   # "vault/vault                8200:8200  vault"           # Task 9
   # "atlantis/atlantis          8080:8080  atlantis"        # Task 10
 )

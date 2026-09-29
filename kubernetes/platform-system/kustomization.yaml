@@ -28,8 +28,9 @@ labels:
 resources:
   - namespace.yaml
   - platform/external-secrets.yaml
+  - platform/ministack.yaml
   # Each component task appends its manifest here:
-  #   platform/ministack.yaml     (Task 7)
+  #   platform/ministack.yaml     (Task 7) ✓ appended below
   #   platform/vault.yaml         (Task 9)
   #   platform/prometheus.yaml    (Task 8)
   #   platform/registry.yaml      (Task 8)

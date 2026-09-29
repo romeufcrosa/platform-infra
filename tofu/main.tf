@@ -142,3 +142,34 @@ module "argocd" {
 
   depends_on = [module.namespaces]
 }
+
+# Ministack has no Helm chart, so this module declares a `kubernetes_deployment`
+# and a `kubernetes_service` rather than a `helm_release`. Verified 2026-09-28:
+# `https://ministack.github.io/ministack-helm/index.yaml` returns 404 and no
+# chart for Ministack is published anywhere, so a `helm_release` here would
+# fail at apply with a repository-not-found error. There is deliberately no
+# `helm/values/ministack.yaml` for the same reason.
+module "ministack" {
+  source = "./modules/ministack"
+
+  namespace = "ministack"
+
+  # The pin lives in exactly one place — `var.ministack_image` in Task 3 — so
+  # the Global Constraint is checked by reading a single line. Splitting on ":"
+  # is safe because the variable is a fully-qualified `repository:tag` by
+  # construction; a caller who passed a digest (`@sha256:...`) or a bare tag
+  # would get a wrong `image_tag` rather than an error, which is why the default
+  # is written out in full rather than assembled.
+  #
+  # That caveat is not theoretical. Until Task 7 this variable's default was
+  # `ghcr.io/ministack/ministack:v0.9.0` — the wrong organisation and a tag
+  # that does not exist. The split silently produced `image_tag = "v0.9.0"`,
+  # the module rendered `ministackorg/ministack:v0.9.0`, and `tofu plan` exited
+  # 0. See the comment on the variable in tofu/variables.tf.
+  image_tag = split(":", var.ministack_image)[1]
+
+  # No `timeout` argument: this module installs no chart, so the Helm timeout
+  # has nothing to govern. Passing it would suggest the resource has a
+  # timeout-sensitive code path it does not have.
+  depends_on = [module.namespaces]
+}
