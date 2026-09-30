@@ -10,45 +10,30 @@ locals {
     "app.kubernetes.io/part-of" = "platform-learning-ecosystem"
   }
 
-  # The bootstrap Job runs in `platform-system`, not in `var.namespace`.
-  # Two reasons, both verified:
+  # The bootstrap Job runs in `platform-system`, not in `var.namespace`. It is
+  # a one-shot task rather than part of the emulated service, and putting it in
+  # the `ministack` namespace would make `kubectl -n ministack delete ns` a way
+  # to orphan a completed Job record.
   #
-  #   * `platform-system` is where the GitOps base lives, so the mirror
-  #     manifest and the imperative resource agree on where the Job is.
-  #   * The Job is a one-shot task, not part of the emulated service. Putting
-  #     it in the `ministack` namespace would make `kubectl -n ministack delete
-  #     ns` a way to orphan a completed Job record.
-  #
-  # The ServiceAccount it references therefore has to exist in this namespace,
-  # which is why the ServiceAccount below is declared against
-  # `var.bootstrap_namespace` and not `var.namespace`.
+  # It is NOT in the GitOps base, and that is deliberate — see the "Queue
+  # bootstrap" section below.
   endpoint = "http://ministack.${var.namespace}.svc.cluster.local:4566"
 
-  # The Job's script lives in a local rather than inline in the `command`
-  # argument, because an HCL heredoc cannot be an element of a list literal —
-  # `command = ["/bin/sh", "-c", <<-EOT ... EOT]` is a hard
-  # `Missing item separator` parse error, verified 2026-09-28.
+  # The Job's script, read once at plan time from the single master copy that
+  # lives beside this file. It is shipped to the pod as a ConfigMap and run
+  # from there; nothing about the queue list, the creation order or the redrive
+  # wiring is restated in HCL.
   #
-  # This text is mirrored in kubernetes/platform-system/platform/ministack.yaml.
-  # The two must stay identical apart from `${local.endpoint}` and
-  # `${join(" ", var.queues)}` being resolved here rather than written out
-  # there. `make validate` kustomize-builds the mirror on every run, but no
-  # check compares the two bodies — see the report's follow-ups.
-  bootstrap_script = <<-EOT
-    set -eu
-    EP="${local.endpoint}"
-    echo "waiting for $EP"
-    until curl -sf "$EP/_ministack/health" >/dev/null 2>&1; do
-      sleep 2
-    done
-    for q in ${join(" ", var.queues)}; do
-      echo "ensuring queue: $q"
-      aws --endpoint-url "$EP" sqs create-queue --queue-name "$q" \
-        --attributes VisibilityTimeout=30 >/dev/null || \
-        echo "queue $q already exists"
-    done
-    aws --endpoint-url "$EP" sqs list-queues
-  EOT
+  # `file()` rather than `templatefile()`: the same file has to stay directly
+  # executable on a developer's machine, and a template would put HCL
+  # interpolation syntax into a script that also runs under /bin/sh.
+  #
+  # The path is inside the module because `file()` cannot read outside it —
+  # verified 2026-09-30, `../../scripts/...` fails with "Invalid value for
+  # \"path\" parameter ... works only with files that are distributed as part of
+  # the configuration source code". `scripts/bootstrap-ministack-queues.sh` is
+  # therefore a wrapper that execs this file, not a second copy of it.
+  bootstrap_script = file("${path.module}/bootstrap-ministack-queues.sh")
 }
 
 # --- The workload itself -------------------------------------------------
@@ -185,6 +170,67 @@ resource "kubernetes_service" "endpoint" {
 #
 # The queues exist as Kubernetes objects, not as a host script someone ran.
 # A Job makes the desired queue set declarative and re-runnable.
+#
+# ONE OWNER. This Job is declared here and ONLY here. It was briefly also in
+# kubernetes/platform-system/platform/ministack.yaml, which was a two-owner bug:
+# that base is not inert, the bootstrap Application syncs it with
+# `directory.recurse: true` / `prune: true` / `selfHeal: true`, and the two
+# copies of the Job had the same name with different specs. The synced copy
+# still carried the `|| echo "queue already exists"` swallow that logs a
+# falsehood on failure. Verified 2026-09-30 against the live Application.
+#
+# The manifest now says where the Job went and why, so the next reader does not
+# "restore" it.
+
+# The single master copy of the queue logic, shipped to the pod.
+#
+# `file()` is deliberate. It resolves at PLAN time, so if the script moves or
+# is deleted this fails the plan instead of silently deploying a Job with
+# stale behaviour. The alternative — a second copy of this logic in HCL, or in
+# the kustomize manifest — would not fail; it would drift, which is the failure
+# this project has now hit twice.
+# The dead-letter queue has to be one of the queues this module creates, and it
+# has to be created before the queue that redrives to it. Neither is enforced
+# by the bootstrap script, which only walks `var.queues`; both are ways to ship
+# a redrive policy pointing at a queue that does not exist.
+#
+# A `check` block, not a `validation` block on the variable, because OpenTofu
+# 1.7.0 rejects a validation that refers to a second variable — see the note in
+# variables.tf. A failed `check` is a WARNING and `plan` still exits 0, which
+# is the documented behaviour of this repo's `check` blocks; treat it as a
+# signal, not a gate.
+check "redrive_queue_is_managed" {
+  assert {
+    condition     = contains(var.queues, var.redrive.dead_letter_queue)
+    error_message = "The dead-letter queue (${var.redrive.dead_letter_queue}) is not in var.queues, so the bootstrap will never create it and the redrive policy will point at nothing."
+  }
+}
+
+check "redrive_source_is_managed" {
+  assert {
+    condition     = contains(var.queues, var.redrive.source_queue)
+    error_message = "The redrive source queue (${var.redrive.source_queue}) is not in var.queues, so the policy will be attached to a queue that is never created."
+  }
+}
+
+check "redrive_target_created_first" {
+  assert {
+    condition     = index(var.queues, var.redrive.dead_letter_queue) < index(var.queues, var.redrive.source_queue)
+    error_message = "The dead-letter queue (${var.redrive.dead_letter_queue}) must come BEFORE the source queue in var.queues. SQS rejects a RedrivePolicy whose target does not exist yet (verified 2026-09-30: InvalidAttributeValue)."
+  }
+}
+
+resource "kubernetes_config_map" "bootstrap_script" {
+  metadata {
+    name      = "ministack-bootstrap-script"
+    namespace = var.bootstrap_namespace
+    labels    = local.labels
+  }
+
+  data = {
+    "bootstrap-ministack-queues.sh" = local.bootstrap_script
+  }
+}
 
 resource "kubernetes_service_account" "bootstrap" {
   metadata {
@@ -250,6 +296,18 @@ resource "kubernetes_job" "bootstrap" {
         restart_policy       = "OnFailure"
         service_account_name = kubernetes_service_account.bootstrap.metadata[0].name
 
+        # The master script, mounted read-only from the ConfigMap above. This
+        # is the whole of the Job's behaviour: the queue names, the ordering,
+        # the redrive wiring and the error handling all live in that one file
+        # and are identical whether it runs in this pod or on a laptop.
+        volume {
+          name = "bootstrap-script"
+
+          config_map {
+            name = kubernetes_config_map.bootstrap_script.metadata[0].name
+          }
+        }
+
         container {
           name  = "aws-cli"
           image = var.bootstrap_image
@@ -271,20 +329,19 @@ resource "kubernetes_job" "bootstrap" {
           #   credentials by running "aws configure".
           #
           # In a cluster pod there is no ~/.aws and no IRSA, so *both* are
-          # absent. Every `aws` call in the brief's script fails, and the
-          # failure is then hidden: the create loop ends in
+          # absent. Every `aws` call in the brief's script failed, and the
+          # failure was then hidden: the create loop ended in
           # `|| echo "queue $q already exists"`, which under `set -e` swallows
           # a non-zero exit and prints a reassuring falsehood. The Job would
           # report "queue order-events already exists" three times having
           # created nothing.
           #
-          # The only thing that fails is the final, unguarded `list-queues`, so
-          # the Job goes red — but the log would blame the wrong thing
-          # entirely. These three values are the standard fake credentials for
-          # a local emulator and are not secrets (Global Constraint: no secret
-          # *value* in a committed file — `test`/`test` authenticates nothing
-          # and authorises nothing; verified, every operation below succeeds
-          # with them).
+          # The master script no longer contains that construct at all. These
+          # values are the standard fake credentials for a local emulator and
+          # are not secrets (Global Constraint: no secret *value* in a
+          # committed file — `test`/`test` authenticates nothing and authorises
+          # nothing; verified, every operation in the runbook succeeds with
+          # them).
           env {
             name  = "AWS_DEFAULT_REGION"
             value = "us-east-1"
@@ -304,10 +361,40 @@ resource "kubernetes_job" "bootstrap" {
             value = ""
           }
 
-          # `curl` is confirmed present in this image (verified 2026-09-28,
-          # /usr/bin/curl 8.3.0), so the wait loop below needs no second image
-          # and no custom entrypoint.
-          command = ["/bin/sh", "-c", local.bootstrap_script]
+          # The script reads these instead of hardcoding them, so the queue
+          # list and the redrive wiring have exactly one source of truth
+          # (var.queues / var.redrive) whether it runs in-cluster or on a host.
+          env {
+            name  = "MINISTACK_ENDPOINT"
+            value = local.endpoint
+          }
+          env {
+            name  = "MINISTACK_QUEUES"
+            value = join(" ", var.queues)
+          }
+          env {
+            name  = "MINISTACK_REDRIVE_SOURCE"
+            value = var.redrive.source_queue
+          }
+          env {
+            name  = "MINISTACK_REDRIVE_DLQ"
+            value = var.redrive.dead_letter_queue
+          }
+          env {
+            name  = "MINISTACK_REDRIVE_MAX"
+            value = tostring(var.redrive.max_receive_count)
+          }
+
+          volume_mount {
+            name       = "bootstrap-script"
+            mount_path = "/opt/scripts"
+            read_only  = true
+          }
+
+          # `curl`, `python3` and `/bin/sh` are all confirmed present in this
+          # image (verified 2026-09-30: /usr/bin/curl 8.3.0, Python 3.11.8), so
+          # the script needs no second image and no custom entrypoint.
+          command = ["/bin/sh", "/opt/scripts/bootstrap-ministack-queues.sh"]
         }
       }
     }

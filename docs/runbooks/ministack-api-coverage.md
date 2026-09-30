@@ -45,6 +45,39 @@ the Job uses differs only in host.
 | `DeleteMessage` | exit 0 |
 | `ChangeMessageVisibility` | exit 0 |
 | `GetQueueAttributes` (`All`) | `QueueArn`, `VisibilityTimeout`, `ApproximateNumberOfMessages`, `…NotVisible`, retention, delay, max size |
+| `SetQueueAttributes` | exit 0; used to attach `RedrivePolicy` to an existing queue |
+| `GetQueueAttributes` (`RedrivePolicy`) | round-trips the stored JSON |
+| `sts GetCallerIdentity` → Account | `000000000000` — the script derives the ARN from this rather than hardcoding it |
+
+## Verified — redrive / dead-letter (added 2026-09-30)
+
+Ministack does **not** merely store a `RedrivePolicy`, it implements the
+behaviour. Proven end-to-end against the real cluster queues, not just by
+reading the attribute back:
+
+- With `maxReceiveCount: 3`, a message sent to `order-events` was received
+  three times; the fourth `receive-message` found the source empty and the
+  message sitting in `order-events-dlq` with its body intact
+  (`{"type":"poison"}`).
+- Attaching a policy to a queue that already exists requires
+  `SetQueueAttributes`: `CreateQueue` on an existing name with a *different*
+  attribute errors with `QueueAlreadyExists`. The bootstrap script handles the
+  repair case explicitly.
+- **Ordering is load-bearing.** Creating the source queue before its DLQ fails:
+
+  ```
+  An error occurred (InvalidAttributeValue) when calling the CreateQueue
+  operation: Invalid value for the parameter RedrivePolicy. Value must be a
+  JSON object containing string fields deadLetterTargetArn and maxReceiveCount
+  (an integer between 1 and 1000).
+  ```
+
+  `var.queues` therefore lists the DLQ first, and a `check` block asserts it.
+
+- **The CLI's `--attributes` shorthand cannot carry a RedrivePolicy at all.**
+  It fails in the argument parser with `Expected: '=', received: '"'`. A
+  `file://` attributes document works. This is a CLI limitation, not a
+  Ministack one — worth knowing because it is the obvious first thing to try.
 
 **`DescribeQueues` does not exist.** It is not an AWS CLI operation at all:
 
@@ -95,14 +128,11 @@ Phase 2 will hit these. None has been run, so none is a guarantee.
 - `DeleteQueue`, `PurgeQueue`
 - Batch APIs: `SendMessageBatch`, `ReceiveMessage` with `DeleteMessageBatch`,
   `ChangeMessageVisibilityBatch`
-- `SetQueueAttributes` on a live queue (e.g. wiring `order-events-dlq` to
-  `order-events` via `RedrivePolicy` — **the DLQ is created but not yet
-  attached**, so a poisoned message on `order-events` is currently dropped, not
-  redriven)
-- `GetQueueAttributes` for `RedrivePolicy` round-tripping
+- `AddPermission` / `RemovePermission` / queue policies
 - Delay queues (`DelaySeconds`), FIFO queues (`.fifo` names, `MessageGroupId`),
   long polling (`WaitTimeSeconds`)
-- `AddPermission` / `RemovePermission` / queue policies
+- Redrive *behaviour* over `maxReceiveCount` values other than 3, and
+  `ApproximateAgeOfOldestMessage` accounting in the DLQ
 - Message retention and visibility-timeout *expiry* over time — only the
   immediate call was checked, not the passage of time
 
@@ -129,6 +159,12 @@ Phase 2 will hit these. None has been run, so none is a guarantee.
   is declared (Task 3) and deliberately unwired: two Ministack processes behind
   one ClusterIP would not share queue state, so scaling out would silently
   split the queues across pods.
+- **Ownership, unresolved.** The `Deployment` and `Service` are declared by
+  OpenTofu *and* by `kubernetes/platform-system/platform/ministack.yaml`, which
+  the ArgoCD bootstrap Application syncs with `recurse: true` / `prune: true` /
+  `selfHeal: true`. One object, two owners. The queue bootstrap Job had exactly
+  this bug and was resolved on 2026-09-30 by moving it to OpenTofu only; the
+  Deployment and Service are still duplicated and are reported, not fixed.
 
 ## Re-running these checks
 

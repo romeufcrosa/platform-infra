@@ -94,78 +94,47 @@ spec:
       port: 4566
       targetPort: 4566
 ---
-# The queue bootstrap Job runs in platform-system, not in the ministack
-# namespace, so its ServiceAccount is here too. See main.tf for the reasoning.
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: ministack-bootstrap
-  namespace: platform-system
-  labels:
-    app.kubernetes.io/part-of: platform-learning-ecosystem
-# There is deliberately NO Role/RoleBinding. The brief asks for an "sqs:*"
-# grant, but Kubernetes RBAC cannot gate this Job: it reaches Ministack over
-# plain HTTP with the AWS CLI and makes no IAM call, so there is nothing for a
-# Role to authorise. Verified 2026-09-28 — create-queue, list-queues, S3
-# Put/GetObject and Secrets Manager Create/GetSecretValue all succeed with
-# fake credentials and no IAM check. A wildcard grant here would look like
-# security while doing nothing.
----
-apiVersion: batch/v1
-kind: Job
-metadata:
-  name: ministack-bootstrap
-  namespace: platform-system
-  labels:
-    app.kubernetes.io/name: ministack
-    app.kubernetes.io/part-of: platform-learning-ecosystem
-spec:
-  backoffLimit: 6
-  # The Job deletes itself an hour after completing; OpenTofu recreates it on
-  # the next apply, which re-runs the idempotent ensure loop below.
-  ttlSecondsAfterFinished: 3600
-  template:
-    metadata:
-      labels:
-        app.kubernetes.io/name: ministack-bootstrap
-    spec:
-      restartPolicy: OnFailure
-      serviceAccountName: ministack-bootstrap
-      containers:
-        - name: aws-cli
-          image: public.ecr.aws/aws-cli/aws-cli:2.17.0   # pinned
-          # The AWS CLI requires BOTH a region and credentials and errors out
-          # without them. A pod has no ~/.aws and no IRSA, so the brief's
-          # version of this Job — which set neither — failed every `aws` call
-          # and then printed "queue <name> already exists" three times via its
-          # `|| echo` fallback, having created nothing. Verified 2026-09-28
-          # inside this exact image; the three values are standard emulator
-          # placeholders, not secrets.
-          env:
-            - name: AWS_DEFAULT_REGION
-              value: us-east-1
-            - name: AWS_ACCESS_KEY_ID
-              value: test
-            - name: AWS_SECRET_ACCESS_KEY
-              value: test
-            - name: AWS_PAGER
-              value: ""
-          # `curl` is confirmed present in this image (verified 2026-09-28,
-          # /usr/bin/curl 8.3.0), so the wait loop needs no second image.
-          command:
-            - /bin/sh
-            - -c
-            - |
-              set -eu
-              EP="http://ministack.ministack.svc.cluster.local:4566"
-              echo "waiting for $EP"
-              until curl -sf "$EP/_ministack/health" >/dev/null 2>&1; do
-                sleep 2
-              done
-              for q in order-events order-events-dlq platform-notifications; do
-                echo "ensuring queue: $q"
-                aws --endpoint-url "$EP" sqs create-queue --queue-name "$q" \
-                  --attributes VisibilityTimeout=30 || \
-                  echo "queue $q already exists"
-              done
-              aws --endpoint-url "$EP" sqs list-queues
+# THE QUEUE BOOTSTRAP JOB IS NOT HERE, AND ITS ABSENCE IS DELIBERATE.
+#
+# It is declared once, in tofu/modules/ministack/main.tf, as
+# `kubernetes_job.bootstrap`, and it runs scripts/bootstrap-ministack-queues.sh
+# mounted in as a ConfigMap. Do not add it back to this file.
+#
+# It was here in the first Task 7 commit, and that was a two-owner bug. This
+# base is not inert: the bootstrap Application syncs kubernetes/platform-system
+# with `directory.recurse: true`, `prune: true` and `selfHeal: true` (verified
+# against the live Application), so ArgoCD DOES apply this file. A `Job` here
+# and a `kubernetes_job` in OpenTofu with the same name and namespace are two
+# owners for one object, and the two copies were not even the same Job — the
+# synced copy still carried the original `|| echo "queue already exists"`
+# swallow that logs a falsehood when queue creation fails. Silent until the
+# first push, at which point the spec that actually reaches the cluster is the
+# broken one.
+#
+# Why OpenTofu owns it rather than ArgoCD: a queue bootstrap is an imperative,
+# once-per-apply action, not desired state. GitOps earns its keep through
+# convergent declarative reconciliation, and a Job carrying
+# `ttlSecondsAfterFinished: 3600` is the wrong shape for that — it deletes
+# itself, and a self-healing GitOps controller will recreate it while the
+# imperative side considers it finished. That is a reconcile loop waiting for a
+# sync. It is also the Global Constraint: OpenTofu owns everything in Phase 1.
+#
+# The ServiceAccount is absent for the same reason. It exists only to serve the
+# Job's `serviceAccountName`; with the Job gone it has no consumer, and leaving
+# a ServiceAccount behind in a synced namespace is the kind of orphan that
+# reads as intentional until someone tries to find what uses it.
+#
+# There is also no Role/RoleBinding here. The brief asks for an "sqs:*" grant,
+# but Kubernetes RBAC cannot gate this Job: it reaches Ministack over plain
+# HTTP with the AWS CLI and makes no IAM call, so there is nothing for a Role
+# to authorise. Verified 2026-09-30 — create-queue, set-queue-attributes,
+# list-queues, S3 Put/GetObject and Secrets Manager Create/GetSecretValue all
+# succeed with fake credentials and no IAM check. A wildcard grant would look
+# like security while doing nothing.
+#
+# REMAINING TWO-OWNER PROBLEM, REPORTED NOT FIXED: the Deployment and Service
+# above are still declared in BOTH this file and
+# tofu/modules/ministack/{main.tf}. That is the same class of conflict at a
+# larger scale, and it is the one thing in this file that is genuinely wrong.
+# See docs/plans Task 7 fix round 1 and the task-7 report. The file header
+# above describes the intended end state: one owner per object.
