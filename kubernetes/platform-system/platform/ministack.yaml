@@ -1,140 +1,57 @@
-# Managed by OpenTofu in the local profile. This manifest mirrors
-# tofu/modules/ministack/main.tf, which is what actually creates these objects
-# in Phase 1. In Phase 2+ ArgoCD becomes authoritative and this file is the one
-# it applies. Change both together.
+# Ministack has NO DOCUMENTS IN THIS FILE, AND THAT IS RULE R29.
 #
-# NOTE ON THE BRIEF'S NAMESPACE WARNING: it predicted that the kustomization's
-# `namespace: platform-system` would rewrite `namespace: ministack` on the two
-# objects below and split the Deployment from where `tofu apply` puts it. That
-# prediction is already obsolete — Task 5 removed the `namespace:` field, and
-# this base has no namespace transformer at all. Verified by rendering rather
-# than by reading the file:
+# R29: in Phase 1, OpenTofu owns every object in kubernetes/platform-system/.
+# The synced base carries Namespaces and component CRD instances, and no
+# workload objects.
 #
-#   $ kubectl kustomize kubernetes/platform-system | grep -n 'namespace:'
-#   ...  namespace: external-secrets
-#   ...  namespace: ministack
-#   ...  namespace: platform-system
+# Why the rule exists. Before it, the Ministack Deployment and Service were
+# declared in BOTH this file and tofu/modules/ministack/main.tf. The queue
+# bootstrap Job had the same duplication and was removed from this file in fix
+# round 1. All three were one object with two owners.
 #
-# Each object below keeps its own namespace. The concern for Phase 2 is real
-# but is now a different one: if `namespace:` is ever re-added to the
-# kustomization, this file breaks again. See the kustomization.yaml header.
+# The failure mode is specific and worth naming, because nothing reports it.
+# ArgoCD's `selfHeal: true` reverts OpenTofu's change, and OpenTofu's next
+# `apply` reverts ArgoCD's. `tofu plan` reports clean the entire time, because
+# neither tool is wrong about its own copy of the desired state — each one is
+# faithfully converging on what it was told. The only visible symptom is a
+# workload that silently undoes a configuration change, some minutes after
+# somebody made it, with a green plan sitting in the middle of the evidence.
 #
-# Ministack has no Helm chart — `https://ministack.github.io/ministack-helm`
-# returns 404 and no chart is published anywhere. Verified 2026-09-28.
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: ministack
-  namespace: ministack
-  labels:
-    app.kubernetes.io/name: ministack
-    app.kubernetes.io/part-of: platform-learning-ecosystem
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app.kubernetes.io/name: ministack
-  template:
-    metadata:
-      labels:
-        app.kubernetes.io/name: ministack
-        app.kubernetes.io/part-of: platform-learning-ecosystem
-    spec:
-      containers:
-        - name: ministack
-          # Pinned (Global Constraint). Verified present on Docker Hub
-          # 2026-09-28 with linux/amd64 and linux/arm64 manifests. The tag
-          # comes from var.ministack_image via var.image_tag on the OpenTofu
-          # side; this literal is the GitOps copy of the same pin and the two
-          # must agree.
-          image: ministackorg/ministack:1.5.17
-          ports:
-            # 4566 is Ministack's only port: S3, SQS and Secrets Manager all
-            # arrive on this one gateway.
-            - name: gateway
-              containerPort: 4566
-          readinessProbe:
-            # Both paths verified 200 against the pinned image.
-            httpGet:
-              path: /_ministack/health
-              port: gateway
-            initialDelaySeconds: 5
-            periodSeconds: 5
-          livenessProbe:
-            httpGet:
-              path: /_ministack/health
-              port: gateway
-            initialDelaySeconds: 15
-            periodSeconds: 20
-          resources:
-            requests:
-              cpu: 100m
-              memory: 256Mi
-            limits:
-              cpu: "1"
-              memory: 1Gi
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: ministack
-  namespace: ministack
-  labels:
-    app.kubernetes.io/name: ministack
-    app.kubernetes.io/part-of: platform-learning-ecosystem
-spec:
-  # ClusterIP, not NodePort: the host reaches it through `make port-forwards`,
-  # and the queue bootstrap Job reaches it in-cluster at
-  # http://ministack.ministack.svc.cluster.local:4566.
-  type: ClusterIP
-  selector:
-    app.kubernetes.io/name: ministack
-  ports:
-    - name: gateway
-      port: 4566
-      targetPort: 4566
----
-# THE QUEUE BOOTSTRAP JOB IS NOT HERE, AND ITS ABSENCE IS DELIBERATE.
+# ArgoCD would also have pruned these objects on the sync that followed this
+# change, had it ever adopted them. It had not, and the reason is worth
+# recording: the OpenTofu-managed objects carry no
+# `argocd.argoproj.io/tracking-id` annotation, so ArgoCD's prune only ever
+# considers objects it has claimed. Verified 2026-09-30 against the live
+# cluster, where the Deployment's annotations are exactly
+# `{"deployment.kubernetes.io/revision":"1"}`. That is the property that makes
+# this deletion safe, and it is a property of WHO CREATED THE OBJECT, not of
+# this file. Re-adding a workload here would hand ArgoCD a claim it does not
+# currently have.
 #
-# It is declared once, in tofu/modules/ministack/main.tf, as
-# `kubernetes_job.bootstrap`, and it runs scripts/bootstrap-ministack-queues.sh
-# mounted in as a ConfigMap. Do not add it back to this file.
+# WHERE THE OBJECTS LIVE INSTEAD:
 #
-# It was here in the first Task 7 commit, and that was a two-owner bug. This
-# base is not inert: the bootstrap Application syncs kubernetes/platform-system
-# with `directory.recurse: true`, `prune: true` and `selfHeal: true` (verified
-# against the live Application), so ArgoCD DOES apply this file. A `Job` here
-# and a `kubernetes_job` in OpenTofu with the same name and namespace are two
-# owners for one object, and the two copies were not even the same Job — the
-# synced copy still carried the original `|| echo "queue already exists"`
-# swallow that logs a falsehood when queue creation fails. Silent until the
-# first push, at which point the spec that actually reaches the cluster is the
-# broken one.
+#   Deployment        tofu/modules/ministack/main.tf
+#                     kubernetes_deployment.ministack
+#   Service           tofu/modules/ministack/main.tf
+#                     kubernetes_service.endpoint
+#   ServiceAccount    tofu/modules/ministack/main.tf
+#                     kubernetes_service_account.bootstrap
+#   bootstrap Job     tofu/modules/ministack/main.tf
+#                     kubernetes_job.bootstrap, running
+#                     tofu/modules/ministack/bootstrap-ministack-queues.sh
+#                     mounted as a ConfigMap
 #
-# Why OpenTofu owns it rather than ArgoCD: a queue bootstrap is an imperative,
-# once-per-apply action, not desired state. GitOps earns its keep through
-# convergent declarative reconciliation, and a Job carrying
-# `ttlSecondsAfterFinished: 3600` is the wrong shape for that — it deletes
-# itself, and a self-healing GitOps controller will recreate it while the
-# imperative side considers it finished. That is a reconcile loop waiting for a
-# sync. It is also the Global Constraint: OpenTofu owns everything in Phase 1.
+# There is no `helm_release` for any of them and no `helm/values/ministack.yaml`
+# for the same reason as before: no Helm chart for Ministack is published
+# anywhere. `https://ministack.github.io/ministack-helm/index.yaml` returns
+# 404. Verified 2026-09-30.
 #
-# The ServiceAccount is absent for the same reason. It exists only to serve the
-# Job's `serviceAccountName`; with the Job gone it has no consumer, and leaving
-# a ServiceAccount behind in a synced namespace is the kind of orphan that
-# reads as intentional until someone tries to find what uses it.
+# This file is kept, rather than deleted, because a reader who finds a
+# platform-system base with no Ministack component in it would reasonably
+# assume the component was never deployed. The absence is the finding; it
+# should be legible without having to reconstruct the history.
 #
-# There is also no Role/RoleBinding here. The brief asks for an "sqs:*" grant,
-# but Kubernetes RBAC cannot gate this Job: it reaches Ministack over plain
-# HTTP with the AWS CLI and makes no IAM call, so there is nothing for a Role
-# to authorise. Verified 2026-09-30 — create-queue, set-queue-attributes,
-# list-queues, S3 Put/GetObject and Secrets Manager Create/GetSecretValue all
-# succeed with fake credentials and no IAM check. A wildcard grant would look
-# like security while doing nothing.
-#
-# REMAINING TWO-OWNER PROBLEM, REPORTED NOT FIXED: the Deployment and Service
-# above are still declared in BOTH this file and
-# tofu/modules/ministack/{main.tf}. That is the same class of conflict at a
-# larger scale, and it is the one thing in this file that is genuinely wrong.
-# See docs/plans Task 7 fix round 1 and the task-7 report. The file header
-# above describes the intended end state: one owner per object.
+# When Phase 2 hands this base to ArgoCD, this file is where the workload comes
+# back — and at that point ownership has to change deliberately, once, in
+# review, in a commit that says so, with the OpenTofu resources removed in the
+# same change. Not as a side effect of whoever pushes second.
