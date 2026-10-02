@@ -279,13 +279,24 @@ resource "kubernetes_job" "bootstrap" {
   spec {
     backoff_limit = 6
 
-    # The Job deletes itself an hour after completing, and OpenTofu recreates
-    # it on the next apply. That is the intended re-runnability, not a bug:
-    # the ensure loop below is idempotent, so a re-run is a no-op that still
-    # proves the endpoint is reachable. The cost is that `tofu plan` shows a
-    # create for this Job once the TTL has expired. That is a real, expected
-    # diff and it is a better trade than a completed Job that never re-checks.
-    ttl_seconds_after_finished = 3600
+    # No `ttl_seconds_after_finished`. An earlier version set it to 3600 so the
+    # Job would clean itself up, on the reasoning that a completed Job is
+    # clutter. The cost was permanent and invisible: the TTL deletes the Job
+    # while state still records it, so EVERY subsequent plan showed
+    #
+    #   # module.ministack.kubernetes_job.bootstrap will be created
+    #
+    # forever. That is the condition this repo's own comments name as "a plan
+    # nobody reads", and it is worse than clutter — it trains the reader to
+    # ignore a non-empty plan, which is precisely the habit that hides a real
+    # one. Task 8 surfaced it: the agent could not report a clean plan because
+    # the plan was never clean.
+    #
+    # Re-runnability does not need the TTL. The ensure loop is idempotent — it
+    # checks `get-queue-url` before creating — so a re-run is a no-op that still
+    # proves the endpoint is reachable. A completed Job that persists is a
+    # truthful record of "this was verified on <date>", and it keeps
+    # `tofu plan` at exit 0.
 
     template {
       metadata {

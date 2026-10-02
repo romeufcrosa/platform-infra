@@ -25,9 +25,18 @@ labels:
     pairs:
       app.kubernetes.io/part-of: platform-learning-ecosystem
 
+# RULE R29b: an object may be declared in exactly ONE place. OpenTofu owns
+# all eleven namespaces (Global Constraint), so NO Namespace document appears in
+# this base. namespace.yaml was here and is now a tombstone; the two Namespace
+# documents that were inline in platform/external-secrets.yaml are gone too.
+#
+# Why this is not merely tidy. A Namespace in this base has two owners:
+# module.namespaces creates it, and ArgoCD syncs it with prune:true. That is
+# the reconcile loop this project already hit once. Separately, dev/staging/prod
+# had never been synced at all, so they sat in the path owned by nobody until the
+# first push. Both problems are the same problem, and removing the objects
+# removes both.
 resources:
-  - namespace.yaml
-  - platform/external-secrets.yaml
   - platform/ministack.yaml
   # Task 8 adds exactly one file, and the reason it is safe here is not "it is
   # a config file" — it is that nothing else declares
