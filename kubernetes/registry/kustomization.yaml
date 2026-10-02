@@ -1,0 +1,33 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# This base is NOT referenced from kubernetes/platform-system/kustomization.yaml
+# and is NOT the path of any Application in Phase 1. It exists so the Phase 2
+# handover is a one-line `source.path` change rather than a reconstruction from
+# a running cluster — and it carries a workload object that OpenTofu ALSO
+# declares.
+#
+# That is only safe because nothing syncs this directory. The bootstrap
+# Application syncs `kubernetes/platform-system` with `directory.recurse: true`
+# and `automated: {prune: true, selfHeal: true}` (read off the live Application,
+# 2026-09-30). If this base were ever added to that Application, the Deployment
+# and Service below would have two owners — a controller reapplying one spec
+# while the other reverts it, with `tofu plan` reporting clean throughout. The
+# only symptom would be a configuration change that silently undoes itself.
+#
+# Check before handing this base over:
+#   kubectl kustomize kubernetes/platform-system \
+#     | grep -cE '^kind: (Deployment|Service|ServiceAccount|Job)$'   # must be 0
+#
+# No global `namespace:` — a leaf base has no reason to carry a transformer that
+# rewrites `metadata.name` on Namespace objects, and each object below declares
+# its own namespace. `includeSelectors: false` so the stamped label is not
+# added to selectors, which would rewrite `spec.selector` on the Service and
+# stop it matching anything.
+labels:
+  - includeSelectors: false
+    pairs:
+      app.kubernetes.io/part-of: platform-learning-ecosystem
+
+resources:
+  - registry.yaml

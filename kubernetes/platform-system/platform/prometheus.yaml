@@ -1,0 +1,51 @@
+# kube-prometheus-stack is installed by the Helm release in
+# tofu/modules/prometheus. It is NOT duplicated here: the chart renders 80
+# objects from 65.5.1 (counted with `helm template ... | grep -c '^kind:'`),
+# and a Git copy would be a second source of truth that silently drifts. What
+# lives in Git is the Grafana datasource and, in Task 11, the dashboard
+# definitions.
+#
+# The only object ArgoCD owns for observability in Phase 1 is this datasource
+# ConfigMap. It is declared nowhere else, which is what makes it safe in a base
+# synced with prune+selfHeal — the test is not "is this file in the synced
+# base", it is "does any other tool declare this object".
+#
+# The URL is the chart's rendered Prometheus Service name,
+# `prometheus-prometheus`, read off `helm template` against 65.5.1. The plan
+# wrote `prometheus-operated`, which this chart does not create: `*-operated` is
+# prometheus-operator's own Service for a CR whose name would have to be `k8s`
+# or `prometheus`, not `prometheus-prometheus`. A datasource pointing at a name
+# that does not resolve looks exactly like a broken Prometheus in the Grafana UI
+# — "no data" on every dashboard, with Prometheus itself healthy.
+#
+# The `grafana_datasource: "1"` label is REQUIRED and is not decoration: the
+# kiwigrid sidecar container in the Grafana Deployment watches for exactly that
+# label with exactly that value (verified by rendering 65.5.1 —
+# `grafana-sc-datasources` carries `LABEL=grafana_datasource`,
+# `LABEL_VALUE="1"`). An unlabelled ConfigMap in this namespace is created by
+# ArgoCD and never loaded by anything.
+#
+# helm/values/prometheus.yaml sets
+# `grafana.sidecar.datasources.defaultDatasourceEnabled: false` so the chart does
+# not ALSO render its own `prometheus-grafana-datasource` ConfigMap with the same
+# label and the same `name: Prometheus`. Both loaded means two datasources with
+# one name and no error — one of them silently wins. Keep those two files in
+# step.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: observability-grafana-datasource
+  namespace: monitoring
+  labels:
+    grafana_datasource: "1"
+data:
+  datasource.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        access: proxy
+        url: http://prometheus-prometheus.monitoring.svc.cluster.local:9090
+        isDefault: true
+        jsonData:
+          timeInterval: 15s

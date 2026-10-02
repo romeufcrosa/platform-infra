@@ -96,6 +96,11 @@ locals {
     prometheus_persistence_enabled = module.local.prometheus_persistence_enabled
     atlantis_replica_count         = module.local.atlantis_replica_count
     ministack_replica_count        = module.local.ministack_replica_count
+
+    # Read by `module "argocd"` below. scripts/check-local-overrides.sh requires
+    # every key in environments/local/outputs.tf to appear here, so this is not
+    # optional bookkeeping.
+    argocd_service_monitor_enabled = module.local.argocd_service_monitor_enabled
   }
 }
 
@@ -139,6 +144,84 @@ module "argocd" {
   admin_password = var.argocd_admin_password
   repo_url       = var.platform_infra_repo_url
   repo_password  = var.github_pat
+
+  # Only true from Task 8 onward: the argocd chart gates its ServiceMonitor
+  # template on the monitoring.coreos.com/v1 CRD existing at render time, and
+  # that CRD arrives with kube-prometheus-stack.
+  enable_service_monitor = module.local.argocd_service_monitor_enabled
+
+  # module.prometheus joins module.namespaces for the same reason: a
+  # ServiceMonitor is worth nothing until the CRD exists, and without the
+  # ordering constraint one `tofu apply` can render the ArgoCD release before
+  # Prometheus is installed — the race Task 6 was repaired to avoid, arriving
+  # from the other direction.
+  depends_on = [module.namespaces, module.prometheus]
+}
+
+# kube-prometheus-stack. The chart renders 80 objects, which is why none of them
+# are re-declared in the GitOps base.
+module "prometheus" {
+  source = "./modules/prometheus"
+
+  namespace = "monitoring"
+
+  # Pinned at the call site on purpose, even though the module has the same
+  # default. Every `module` block in this plan pins its chart version here: a
+  # module default that silently upgrades a chart on a future `tofu apply` is
+  # how a laptop ends up running a stack version nobody chose, and the Atlantis
+  # plan comment is the only place that change would be visible.
+  #
+  # 65.5.1 (appVersion v0.77.2), read off the live repo with
+  # `helm search repo prometheus-community/kube-prometheus-stack --version
+  # 65.5.1` on 2026-09-30. The newest published version that day was 91.8.2.
+  # helm/values/prometheus.yaml is written against the 65.x schema and is
+  # upgraded with the chart in the same commit.
+  chart_version = "65.5.1"
+
+  # This is module.local's FIRST real consumer. Until this line existed,
+  # `prometheus_retention` in overrides.tf was a local nothing read, editing it
+  # produced an empty plan, and the Phase 1 exit criterion ("open a PR editing
+  # overrides.tf, read the Atlantis plan comment") would have passed
+  # vacuously.
+  retention           = module.local.prometheus_retention
+  persistence_enabled = module.local.prometheus_persistence_enabled
+
+  timeout              = var.helm_timeout
+  namespace_dependency = module.namespaces
+
+  depends_on = [module.local]
+}
+
+# The container registry. No Helm chart: the module declares a
+# kubernetes_deployment / kubernetes_service / kubernetes_secret, the same shape
+# as module "ministack" above.
+#
+# This completes the picture for Task 2: the minikube `registry` addon was
+# dropped there because its backing image
+# `gcr.io/k8s-minikube/kube-registry-proxy:0.0.6` was deleted upstream, and
+# Task 2 promised the workload would arrive here. It does — created, not
+# addressed. Had the addon survived, this module would have had nothing to make
+# usable.
+module "registry" {
+  source = "./modules/registry"
+
+  namespace = "registry"
+
+  # Same one-place pin as Ministack: the tag lives in the root's
+  # `registry_image` variable so the Global Constraint is checked by reading one
+  # line, and the module receives only the tag. Splitting on ":" is safe because
+  # the variable is a fully-qualified `repository:tag` by construction — a
+  # caller who passed a digest or a bare tag would get a wrong `image_tag`
+  # rather than an error, which is why the default is written out in full.
+  image_tag = split(":", var.registry_image)[1]
+
+  # The same list module.namespaces iterates, so "a pull secret in every
+  # platform namespace" is true by construction rather than by two lists
+  # agreeing. The root's copy of the module.namespaces depends_on is written out
+  # rather than inferred, because `namespace_dependency` is `type = any` and
+  # OpenTofu cannot read through `any` to discover the ordering on its own.
+  namespaces           = local.platform_namespaces
+  namespace_dependency = module.namespaces
 
   depends_on = [module.namespaces]
 }

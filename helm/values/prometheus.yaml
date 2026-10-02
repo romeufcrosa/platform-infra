@@ -1,0 +1,169 @@
+# kube-prometheus-stack 65.5.1 (appVersion v0.77.2), verified 2026-09-30 against
+# `helm pull prometheus-community/kube-prometheus-stack --version 65.5.1 --untar`.
+#
+# THE CHART SHIPS NO `values.schema.json` (verified: `ls kube-prometheus-stack/values.schema.json`
+# -> No such file). Helm therefore does not reject an unknown key here — it drops
+# it silently, exactly as it does in argo-cd 6.7.x. Every key below was checked
+# against the pulled `values.yaml` or the template that consumes it, and the ones
+# that do NOT exist are called out inline. When the chart is upgraded this file
+# is upgraded with it in the same commit.
+#
+# Retention and persistence are NOT here: they are local-profile deviations and
+# live in `tofu/environments/local/overrides.tf`, read by the module.
+
+# `fullnameOverride` is values.yaml:23. It renames every object the PARENT chart
+# templates, so the endpoints in `tofu/outputs.tf` and
+# `scripts/port-forwards.sh` do not carry the release name. With this set to
+# `prometheus`, rendering 65.5.1 produces:
+#
+#   Service grafana               (80 -> 3000)   <- from grafana.fullnameOverride
+#   Service prometheus-prometheus (9090)
+#   Service prometheus-alertmanager (9093)
+#   Prometheus CR  prometheus-prometheus
+#
+# It does NOT reach into a subchart — see `grafana.fullnameOverride` below.
+fullnameOverride: prometheus
+
+defaultRules:
+  create: true
+  rules:
+    etcd: false # noisy on a single-node cluster
+    # THE PLAN WROTE `kubeScheduler: false` AND `kubeControllerManager: false`.
+    # Only the second of those is a real key. The rule files are gated on the
+    # key that matches their filename (templates/prometheus/rules-1.14/), and the
+    # scheduler rules ship as TWO keys:
+    #   kubeSchedulerAlerting:    kube-scheduler.rules.yaml
+    #   kubeSchedulerRecording:   kube-scheduler.rules.yaml
+    # Verified by reading templates/prometheus/rules-1.14/ in the pulled chart.
+    # A `kubeScheduler: false` would have been dropped without a warning, and
+    # both scheduler rule groups would have rendered anyway.
+    kubeSchedulerAlerting: false # single node: not meaningful
+    kubeSchedulerRecording: false
+    kubeControllerManager: false
+
+alertmanager:
+  enabled: true
+  alertmanagerSpec:
+    replicas: 1
+
+  # The plan shipped a separate `kubernetes_config_map.alertmanager_routes`
+  # carrying a `routes.yaml` key and labelled `alertmanager: main`, on the
+  # assumption that Alertmanager reads it. IT DOES NOT. Verified against the
+  # pulled 65.5.1: no template in templates/alertmanager/ carries the label
+  # `alertmanager: main` (`grep -rn "alertmanager: main" templates/` -> no
+  # matches). The chart renders its whole configuration into a Secret named
+  # `alertmanager-<crname>` with the single key `alertmanager.yaml`, built from
+  # `.Values.alertmanager.config` (templates/alertmanager/secret.yaml:1-27).
+  # A ConfigMap beside it is an object nothing reads — the one shape of
+  # "inert configuration" this project keeps having to delete.
+  #
+  # The route therefore lives here, where the chart actually consumes it.
+  config:
+    route:
+      receiver: "null"
+      group_by:
+        - alertname
+        - namespace
+    receivers:
+      - name: "null"
+
+grafana:
+  enabled: true
+  adminUser: admin
+  # Set by the OpenTofu module (random_password.grafana.result), never committed.
+  adminPassword: ""
+
+  # Needed because the top-level `fullnameOverride` above does NOT reach into a
+  # subchart: the grafana subchart derives its name from `.Release.Name`, so
+  # without this the Service is `kube-prometheus-stack-grafana` and both
+  # `scripts/port-forwards.sh` and the verify script would have to carry the
+  # release name. Verified by rendering both with and without — with the key,
+  # `Service grafana` and `Deployment grafana`.
+  fullnameOverride: grafana
+
+  persistence:
+    enabled: false
+
+  # The chart's own Grafana ServiceMonitor. This is the cheapest end-to-end
+  # proof that scrape -> store -> query works.
+  serviceMonitor:
+    enabled: true
+
+  sidecar:
+    datasources:
+      # The kiwigrid sidecar is ALREADY on in this chart — the parent values set
+      # `grafana.sidecar.datasources.enabled: true` with
+      # `label: grafana_datasource, labelValue: "1"`
+      # (values.yaml:1065-1070, 1094-1095). Restated here so the next reader
+      # does not assume the datasource ConfigMap is inert.
+      #
+      # What is switched OFF is `defaultDatasourceEnabled`, and this is the
+      # reason the ArgoCD-owned `observability-grafana-datasource` ConfigMap in
+      # kubernetes/platform-system/platform/prometheus.yaml can exist at all.
+      # With it on, the chart ALSO renders a
+      # `prometheus-grafana-datasource` ConfigMap carrying the same label, the
+      # same `name: Prometheus` and the same URL
+      # (templates/grafana/configmaps-datasources.yaml:26-40). The sidecar
+      # loads both, and Grafana ends up with two datasources named Prometheus —
+      # one of which silently wins, and there is no error anywhere.
+      enabled: true
+      defaultDatasourceEnabled: false
+
+prometheus:
+  prometheusSpec:
+    # Retention itself is a local-profile deviation and is set by the module from
+    # `prometheus_retention` in overrides.tf. The SIZE cap is not — it is a
+    # laptop-disk guard that belongs with the resources below. Verified real:
+    # values.yaml:3732 (`retentionSize: ""`) and it renders onto the Prometheus
+    # CR as `retentionSize: "4GB"`.
+    retentionSize: 4GB
+
+    resources:
+      requests:
+        cpu: 200m
+        memory: 1Gi
+      limits:
+        memory: 2Gi
+
+    # THE SELECTOR BLOCK. All three `*Selector` values are `{}` in the chart's
+    # own defaults already (values.yaml:3642, 3665, 3617), so setting them
+    # explicitly is documentation, not a change: the rendered Prometheus carries
+    # `serviceMonitorSelector: {}` either way. What IS load-bearing are the three
+    # `*SelectorNilUsesHelmValues` keys, which default to `true` and would fall
+    # back to `matchLabels: {release: kube-prometheus-stack}` — excluding every
+    # platform ServiceMonitor that does not carry the chart's release label.
+    #
+    # The chart renders an explicit `{}` for both the label selector and the
+    # NAMESPACE selector when the value is falsy:
+    #   templates/prometheus/prometheus.yaml:171-176 — `serviceMonitorNamespaceSelector: {}`
+    #   and the same shape for pod/rule/probe/scrapeConfig.
+    # An empty namespace selector means ALL namespaces, so the ArgoCD
+    # ServiceMonitor in `argocd` IS watched. The `matchNames: [monitoring]`
+    # failure this project was warned about does not exist in 65.5.1.
+    # Verified by rendering and by querying the live Prometheus in step 6.
+    #
+    # There is deliberately NO `serviceMonitorNamespaceSelectorNilUsesHelmValues`
+    # here. That key does not exist in 65.5.1 (values.yaml has it only for the
+    # label selectors — `probeSelectorNilUsesHelmValues`,
+    # `scrapeConfigSelectorNilUsesHelmValues` exist; the namespace variants do
+    # not), so writing it would be another silently-dropped key.
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    serviceMonitorSelector: {}
+    podMonitorSelector: {}
+    serviceMonitorNamespaceSelector: {}
+
+  # THE PLAN WROTE `prometheus.serviceMonitor.enabled: true`. That key does not
+  # exist in 65.5.1. The real one is `selfMonitor` (values.yaml:2711), which
+  # gates templates/prometheus/servicemonitor.yaml:1 and already defaults to
+  # `true`. Spelling it out anyway so the intent is stated rather than inherited
+  # from a moving default.
+  serviceMonitor:
+    selfMonitor: true
+
+kubeStateMetrics:
+  enabled: true
+
+nodeExporter:
+  enabled: true

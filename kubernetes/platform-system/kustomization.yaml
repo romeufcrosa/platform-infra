@@ -29,8 +29,13 @@ resources:
   - namespace.yaml
   - platform/external-secrets.yaml
   - platform/ministack.yaml
+  # Task 8 adds exactly one file, and the reason it is safe here is not "it is
+  # a config file" — it is that nothing else declares
+  # `observability-grafana-datasource`. The registry's GitOps copy lives in
+  # kubernetes/registry/, which NO Application points at, because the
+  # kubernetes_deployment / kubernetes_service in tofu/modules/registry/ are the
+  # live objects and a synced twin would be a second owner.
+  - platform/prometheus.yaml
   # Each component task appends its manifest here:
   #   platform/ministack.yaml     (Task 7) ✓ appended below
   #   platform/vault.yaml         (Task 9)
-  #   platform/prometheus.yaml    (Task 8)
-  #   platform/registry.yaml      (Task 8)

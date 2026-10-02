@@ -61,6 +61,22 @@ variable "ministack_image" {
   default = "ministackorg/ministack:1.5.17"
 }
 
+variable "registry_image" {
+  description = <<-EOT
+    Pinned container registry image, as `repository:tag`. Never 'latest'
+    (Global Constraint).
+
+    ADDED BY TASK 8, not Task 3. The Task 8 brief referred to "the root's
+    `registry_image` variable (Task 3)", but no such variable existed — it was
+    the only input the registry module needs and nothing else in the repo
+    declares it. Added here, and deliberately without a `split(":", ...)` guard
+    in the variable, because the split lives at the single call site in
+    `module "registry"` for the same reason `ministack_image` works that way.
+  EOT
+  type        = string
+  default     = "registry:2.8.3"
+}
+
 variable "platform_infra_repo_url" {
   description = <<-EOT
     Git URL of this repository. Used twice, deliberately: ArgoCD registers it

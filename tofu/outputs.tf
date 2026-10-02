@@ -24,9 +24,36 @@ output "endpoints" {
     registry.
   EOT
   value = {
-    argocd    = "https://localhost:8081"
-    ministack = "http://localhost:4566"
+    argocd     = "https://localhost:8081"
+    grafana    = "http://localhost:3000"
+    prometheus = "http://localhost:9090"
+    registry   = "localhost:5000"
+    ministack  = "http://localhost:4566"
   }
+}
+
+output "grafana_password_file" {
+  description = "Path to the generated Grafana admin password file."
+  value       = module.prometheus.grafana_password_file
+}
+
+# The registry's two addresses and the pull-secret name, forwarded from the
+# module that owns them. Phase 2 services read `registry_url` for `docker push`
+# and `pull_secret_name` for their pod specs; the root is the only place both
+# can be read from without reaching into a module.
+output "registry_url" {
+  description = "Host-local registry address, after `make port-forwards`."
+  value       = module.registry.registry_url
+}
+
+output "registry_in_cluster_url" {
+  description = "In-cluster registry address, for image references pods pull from."
+  value       = module.registry.in_cluster_url
+}
+
+output "registry_pull_secret_name" {
+  description = "Name of the image pull secret present in every platform namespace."
+  value       = module.registry.pull_secret_name
 }
 
 output "namespaces" {

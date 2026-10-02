@@ -42,3 +42,13 @@ output "ministack_replica_count" {
   description = "Ministack replica count. One locally."
   value       = local.ministack_replica_count
 }
+
+output "argocd_service_monitor_enabled" {
+  description = <<-EOT
+    Whether the ArgoCD chart renders argocd-server's ServiceMonitor. True only
+    from Task 8 onward: the argocd chart gates that template on the
+    monitoring.coreos.com/v1 CRD existing at render time, and that CRD arrives
+    with kube-prometheus-stack.
+  EOT
+  value       = local.argocd_service_monitor_enabled
+}

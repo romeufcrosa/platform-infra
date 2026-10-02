@@ -1,0 +1,80 @@
+# The container registry has no Helm chart in this project. Its manifest
+# mirrors the `kubernetes_deployment` / `kubernetes_service` in
+# tofu/modules/registry/main.tf, which is what actually creates them in Phase 1.
+#
+# THIS FILE IS NOT APPLIED BY ANYTHING TODAY. The OpenTofu module owns the live
+# objects; this is the Phase 2 handover copy. Change both together, in the same
+# PR that moves ownership.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: registry
+  namespace: registry
+  labels:
+    app.kubernetes.io/name: registry
+    app.kubernetes.io/part-of: platform-learning-ecosystem
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: registry
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: registry
+        app.kubernetes.io/part-of: platform-learning-ecosystem
+    spec:
+      containers:
+        - name: registry
+          # Pinned (Global Constraint). The tag comes from var.registry_image
+          # via var.image_tag on the OpenTofu side; this literal is the GitOps
+          # copy of the same pin and the two must agree.
+          image: registry:2.8.3
+          ports:
+            - name: registry
+              containerPort: 5000
+          readinessProbe:
+            httpGet:
+              path: /v2/
+              port: 5000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /v2/
+              port: 5000
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+            - name: storage
+              mountPath: /var/lib/registry
+      # emptyDir, not a PVC — see the module's comment. Everything pushed here
+      # dies with the cluster (ADR 0002).
+      volumes:
+        - name: storage
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: registry
+  namespace: registry
+  labels:
+    app.kubernetes.io/name: registry
+    app.kubernetes.io/part-of: platform-learning-ecosystem
+spec:
+  # ClusterIP: the host reaches it through `make port-forwards`, not a NodePort.
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: registry
+  ports:
+    - name: registry
+      port: 5000
+      targetPort: 5000
