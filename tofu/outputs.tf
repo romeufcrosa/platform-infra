@@ -29,6 +29,7 @@ output "endpoints" {
     prometheus = "http://localhost:9090"
     registry   = "localhost:5000"
     ministack  = "http://localhost:4566"
+    vault      = "http://localhost:8200"
   }
 }
 

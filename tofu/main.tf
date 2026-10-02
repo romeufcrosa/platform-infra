@@ -256,3 +256,37 @@ module "ministack" {
   # timeout-sensitive code path it does not have.
   depends_on = [module.namespaces]
 }
+
+# Vault. The only module in this plan that carries a `local_file` and writes a
+# credential: the root token is generated here, handed to the chart through
+# `yamlencode`, and written to local-secrets/ (gitignored) for
+# scripts/seed-vault.sh. No token value is ever an output or a committed file.
+#
+# The chart pin is at the call site for the same reason as every other module
+# here: see the long comment on `module "prometheus"`. 0.28.0 is the CHART
+# version and ships Vault 1.16.1 — the two number independently.
+module "vault" {
+  source = "./modules/vault"
+
+  namespace     = "vault"
+  chart_version = "0.28.0"
+  timeout       = var.helm_timeout
+
+  # Two ordering constraints, and they are for different reasons.
+  #
+  # 1. The namespace must exist before the chart installs, because
+  #    `create_namespace = false` (OpenTofu owns every namespace).
+  # 2. The External Secrets Operator must exist before the ClusterSecretStore
+  #    and the creds Secret are planned, because `kubernetes_manifest` resolves
+  #    the GVK against the live API at PLAN time. Without this, a plan against
+  #    a cluster where Task 4 has not been applied fails with "API did not
+  #    recognize GroupVersionKind" — the same wall module.argocd hit.
+  namespace_dependency        = module.namespaces
+  external_secrets_dependency = module.external_secrets
+
+  # Task 10's `module "atlantis"` declares `depends_on = [module.vault]`. Until
+  # this block existed that reference pointed at a module that did not exist
+  # and Task 10 would have failed `tofu validate` with a "module not found"
+  # naming the wrong task.
+  depends_on = [module.namespaces, module.external_secrets]
+}

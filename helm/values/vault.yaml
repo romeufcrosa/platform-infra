@@ -1,0 +1,89 @@
+# Vault in dev mode for the local profile. Dev mode means: in-memory storage,
+# a fixed root token, auto-unseal, and no persistence. Every one of those is
+# unacceptable in production and acceptable here because the whole cluster
+# is disposable (ADR 0002). The runbook vault-secrets.md explains what
+# changes when this is replaced with a real HA deployment.
+#
+# Every key below was read off chart 0.28.0's own `values.yaml`,
+# `values.schema.json` and `templates/`, not written from memory, and each was
+# then confirmed by rendering: `helm template vault hashicorp/vault --version
+# 0.28.0 -f helm/values/vault.yaml`. Two of the three defects this file had
+# were keys the chart does not have (a listen-address key) or keys at the
+# wrong depth (`standalone`), and both failed silently.
+#
+# On silence. Chart 0.28.0 DOES ship a `values.schema.json` (44,632 bytes) —
+# the plan brief said it did not, and that claim is wrong. But the conclusion
+# the brief draws from it is right, and for a different reason: the schema sets
+# `additionalProperties: false` NOWHERE. `grep -n additionalProperties
+# values.schema.json` returns zero hits, so the schema constrains the *types* of
+# keys it knows and says nothing about keys it does not. Verified
+# empirically, not inferred from the absence of a grep hit:
+#
+#   helm template vault hashicorp/vault --version 0.28.0 \
+#     -f <a values file with `server.thisKeyDoesNotExist: boom` and
+#        `totallyTopLevelBogus: 1`>  ->  exit 0, empty stderr,
+#   grep -c 'thisKeyDoesNotExist\|totallyTopLevelBogus' -> 0
+#
+# So an unknown key is still dropped without a warning, and the mistake
+# surfaces as a pod that never becomes Ready with nothing in its log naming the
+# value that was wrong. That is why the render checks in the runbook are
+# mandatory after any change to this file.
+server:
+  dev:
+    # THIS IS THE KEY THAT MAKES THE REST OF THIS FILE TRUE. `vault.mode`
+    # in templates/_helpers.tpl:146-160 branches on exactly this boolean and
+    # its chart default is `false`; with it unset, `vault.args` renders
+    # `vault server -config=/tmp/storageconfig.hcl` instead of `vault server
+    # -dev`, and Vault starts in production mode with no storage config, no
+    # auto-unseal and — because `dataStorage.enabled` is false below — no PVC
+    # to put storage in. The pod sits in `CrashLoopBackOff` and the error names
+    # the storage config, not the boolean three lines up that was never set.
+    # Setting `devRootToken` alone does nothing: it is only read on the branch
+    # `enabled` selects.
+    enabled: true
+    devRootToken: ""          # set by the OpenTofu module
+  dataStorage:
+    # Chart default is `true` (values.yaml:766-767), so this is an override,
+    # not a restatement. Ignored in dev mode — dev has no storage backend at
+    # all — and kept because it is what makes the non-dev path loud rather than
+    # silent if `enabled` above is ever removed.
+    enabled: false
+
+  # There is deliberately NO listen-address key here, and no `server.extraArgs`
+  # either. A listen-address key under `dev` does not exist anywhere in chart
+  # 0.28.0: the schema's `server.dev` object has exactly two properties,
+  # `devRootToken` and `enabled`, and `templates/_helpers.tpl:241-242` hard-sets
+  # `VAULT_DEV_LISTEN_ADDRESS: "[::]:8200"` on the dev branch. `[::]` is the
+  # IPv6 wildcard that also accepts IPv4 on a dual-stack socket, so the Service
+  # has something to connect to without any key here. Adding
+  # `extraArgs: "-dev-listen-address=..."` would be redundant, and a
+  # nonexistent key would do nothing at all.
+  #
+  # `standalone` lives under `server:`, not at the top level. The chart's
+  # `server.standalone` exists (chart default `enabled: "-"`, values.yaml:826-827,
+  # which `vault.mode` line 156 treats as standalone); a top-level `standalone:`
+  # is an unknown key. It is also inert in dev mode — `vault.mode` tests dev
+  # first (line 152) and never reaches the standalone branch (line 156) — and it
+  # is written anyway because it is the posture a reader expects and because the
+  # day `dev.enabled` goes false this is what governs the pod.
+  standalone:
+    enabled: true
+
+ui:
+  enabled: true
+
+injector:
+  enabled: false               # not used: External Secrets is the sync mechanism
+
+# No `services:` block — chart 0.28.0 has no such key. `server` in the schema
+# has 43 properties and `services` is not among them (read out with
+# `python3 -c "json.load(...)"`, not by eye). The KV v2 mount at `secret/` that
+# this plan's whole secret contract depends on is created by `vault server -dev`
+# itself, which always enables a KV v2 store at `secret/` on startup; that is
+# Vault's dev-mode behaviour, not a chart value. The `server.services` key that
+# older Vault charts used was removed upstream, and `services` is not in the
+# chart's schema at all. The `ClusterSecretStore` (`path: "secret"`,
+# `version: "v2"`) and `scripts/seed-vault.sh` both address exactly the mount
+# dev mode creates, so neither needs changing — but if you are reading this
+# because a `kv`-service block is missing, it was removed because it does
+# nothing, and re-adding it would reintroduce a silent no-op.

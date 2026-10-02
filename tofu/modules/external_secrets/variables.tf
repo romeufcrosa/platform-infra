@@ -13,7 +13,9 @@ variable "chart_version" {
   #
   # DO NOT "refresh" this to 2.x. The pin is old on purpose: 0.9.x serves the
   # `external-secrets.io/v1beta1` API, which is what every manifest in this
-  # plan declares (see `cluster-secret-store.yaml` in this module and all 14
+  # plan declares (see `tofu/modules/vault/cluster-secret-store.yaml` — that
+  # file used to be a reference copy in THIS module and was moved to
+  # `tofu/modules/vault/` in Task 9 so exactly one exists — and the
   # ClusterSecretStore references in Task 9). The 2.x line moved to `v1`, so a
   # version bump here is not a version bump — it is an API contract change that
   # would break Task 9 with no error at the pin site. Verified 2026-09-26: 0.9.11

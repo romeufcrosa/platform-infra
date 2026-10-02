@@ -54,7 +54,13 @@ FORWARDS=(
   # script rather than at the chart.
   "monitoring/prometheus-prometheus    9090:9090  prometheus"  # Task 8
   "registry/registry                  5000:5000  registry"    # Task 8
-  # "vault/vault                      8200:8200  vault"       # Task 9
+  # Vault's governing Service is `vault`. Uncommented in Task 9 and verified
+  # against the live chart: chart 0.28.0 renders THREE Services — `vault`
+  # (8200, the client-facing one), `vault-internal` (headless, for the
+  # StatefulSet's own gossip) and `vault-ui`. `vault` is the right target;
+  # forwarding to `vault-internal` resolves to no cluster IP, because that
+  # Service is headless (kubectl reports `ClusterIP: None`).
+  "vault/vault                        8200:8200  vault"       # Task 9
   # "atlantis/atlantis                8080:8080  atlantis"    # Task 10
 )
 

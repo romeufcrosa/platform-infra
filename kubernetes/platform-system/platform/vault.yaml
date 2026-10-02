@@ -1,0 +1,95 @@
+# Vault's WORKLOAD HAS NO DOCUMENTS IN THIS FILE, AND THAT IS RULE R29b.
+#
+# The one object that IS here — the ExternalSecret at the bottom — is here on
+# purpose, and the distinction matters, so it is worth stating precisely.
+#
+# R29b: an object may be declared in exactly ONE place. ArgoCD syncs this base
+# with `recurse: true`, `prune: true` and `selfHeal: true`, so anything
+# declared here AND in an OpenTofu module is a reconcile loop: ArgoCD reverts
+# OpenTofu's change, OpenTofu's next apply reverts ArgoCD's, and `tofu plan`
+# reports clean the entire time because neither tool is wrong about its own
+# copy of the desired state. That is the same defect `platform/ministack.yaml`
+# and `platform/external-secrets.yaml` are tombstones for.
+#
+# WHERE THE VAULT OBJECTS LIVE INSTEAD:
+#
+#   StatefulSet/vault      Helm release, hashicorp/vault 0.28.0
+#                          tofu/modules/vault/main.tf
+#                          helm_release.vault -> `statefulset/vault`
+#   Service/vault          same release (plus vault-internal, vault-ui)
+#   ServiceAccount/vault   same release
+#   ClusterSecretStore/vault        tofu/modules/vault/main.tf
+#                          kubernetes_manifest.cluster_secret_store
+#   Secret/external-secrets-vault-creds
+#                          tofu/modules/vault/main.tf
+#                          kubernetes_secret.vault_creds
+#
+# Confirmed against the live cluster after this task's apply, not inferred:
+# `kubectl --context platform -n vault get all` shows the StatefulSet, the
+# three Services and the ServiceAccount, and none of them carry an
+# `argocd.argoproj.io/tracking-id` annotation — which is the property that
+# makes this safe. ArgoCD's prune only ever considers objects it has claimed,
+# and it has claimed none of these.
+#
+# WHY THE ExternalSecret BELOW IS THE EXCEPTION. It is not a second owner of
+# anything above. The OpenTofu module holds a copy of this manifest at
+# `tofu/modules/vault/external-secrets-example.yaml` purely so the shape is
+# reviewable in a PR, and NO OpenTofu resource applies it — the file is read by
+# no tool. The live ExternalSecret in the `dev` namespace has exactly one
+# owner, and it is ArgoCD, here. Had this manifest also been declared as a
+# `kubernetes_manifest` in the module, it would be a two-owner object like the
+# Deployment was, and it would be a tombstone too.
+#
+# Why it belongs in GitOps at all: the seed script and this ExternalSecret
+# then change in one reviewed place. If the contract in
+# `scripts/seed-vault.sh` drifts from the `remoteRef.key` values here, the
+# secret stops refreshing and the ExternalSecret reports
+# `SecretSyncedError` in the cluster — a visible failure, not a service that
+# quietly comes up with yesterday's credentials.
+#
+# When Phase 2 hands this base to ArgoCD for the workload too, ownership has to
+# change deliberately, once, in review, in a commit that says so, with the
+# OpenTofu resources removed in the same change.
+---
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: go-service-credentials
+  namespace: dev
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: vault
+    kind: ClusterSecretStore
+  target:
+    name: go-service-credentials
+    creationPolicy: Owner
+  data:
+    # The `property:` line is REQUIRED and the brief omitted it. Without it,
+    # `remoteRef` selects the WHOLE secret and External Secrets writes the
+    # value as a JSON envelope of every key in the Vault entry. Observed on the
+    # live cluster with the brief's exact manifest:
+    #
+    #   database-url = {"value":"postgres://platform:platform@postgres..."}
+    #
+    # A Go service doing `os.Getenv("DATABASE_URL")` gets a string starting
+    # with `{` and fails at connect time with an error naming neither Vault nor
+    # External Secrets. `scripts/seed-vault.sh` stores each value under a key
+    # named after the path's leaf segment, so `property:` names that key and
+    # the service receives the bare credential.
+    - secretKey: database-url
+      remoteRef:
+        key: platform/go-service/database-url
+        property: database-url
+    - secretKey: jwt-secret
+      remoteRef:
+        key: platform/go-service/jwt-secret
+        property: jwt-secret
+    - secretKey: aws-access-key-id
+      remoteRef:
+        key: platform/go-service/aws-access-key-id
+        property: aws-access-key-id
+    - secretKey: aws-secret-access-key
+      remoteRef:
+        key: platform/go-service/aws-secret-access-key
+        property: aws-secret-access-key

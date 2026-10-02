@@ -52,6 +52,12 @@ resource "helm_release" "external_secrets" {
 # object (perpetual diff, or "Provider produced inconsistent result after
 # apply" depending on ordering).
 #
+# This module also no longer holds a `cluster-secret-store.yaml`. Task 9 moved
+# it to `tofu/modules/vault/`, where the OpenTofu resource that actually
+# applies the ClusterSecretStore lives, so the tree has exactly one file
+# describing the object this cluster has. See `variables.tf` for the note on
+# the `vault_token` variable that is deliberately absent.
+#
 # The underlying reason the secret cannot live here: a Vault root token does
 # not exist until Vault does, and Vault is Task 9. A count guard is the wrong
 # tool for expressing "the value does not exist yet" — it defers the
