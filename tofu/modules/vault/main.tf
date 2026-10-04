@@ -47,13 +47,13 @@ resource "helm_release" "vault" {
     # worse — it would move the one key that decides whether Vault starts in
     # dev mode out of the file anyone actually opens when Vault misbehaves.
     #
-    # That module.local.vault_dev_mode exists in
-    # `tofu/environments/local/overrides.tf` and is NOT read here is
-    # deliberate and worth naming, because it looks like an oversight. Wiring
-    # it would mean `server.dev.enabled = module.local.vault_dev_mode`, which
-    # puts the mode decision in a file nobody opens when Vault misbehaves and
-    # leaves `helm/values/vault.yaml` free to be edited into a state that no
-    # longer matches the cluster. See docs/runbooks/vault-secrets.md.
+    # The fact that `module.local.vault_dev_mode` exists in
+    # `tofu/environments/local/overrides.tf:14` and is deliberately NOT read
+    # here is worth naming, because an unread override looks like an oversight.
+    # Wiring it would mean `server.dev.enabled = module.local.vault_dev_mode`,
+    # which puts the mode decision in a file nobody opens when Vault misbehaves
+    # and leaves `helm/values/vault.yaml` free to be edited into a state that
+    # no longer matches the cluster. See docs/runbooks/vault-secrets.md.
     [yamlencode({
       server = {
         dev = { devRootToken = random_password.root_token.result }

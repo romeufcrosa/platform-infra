@@ -76,14 +76,29 @@ injector:
   enabled: false               # not used: External Secrets is the sync mechanism
 
 # No `services:` block — chart 0.28.0 has no such key. `server` in the schema
-# has 43 properties and `services` is not among them (read out with
-# `python3 -c "json.load(...)"`, not by eye). The KV v2 mount at `secret/` that
-# this plan's whole secret contract depends on is created by `vault server -dev`
-# itself, which always enables a KV v2 store at `secret/` on startup; that is
-# Vault's dev-mode behaviour, not a chart value. The `server.services` key that
-# older Vault charts used was removed upstream, and `services` is not in the
-# chart's schema at all. The `ClusterSecretStore` (`path: "secret"`,
-# `version: "v2"`) and `scripts/seed-vault.sh` both address exactly the mount
-# dev mode creates, so neither needs changing — but if you are reading this
-# because a `kv`-service block is missing, it was removed because it does
-# nothing, and re-adding it would reintroduce a silent no-op.
+# has 45 properties and `services` is not among them, counted rather than
+# eyeballed:
+#
+#   $ python3 -c "import json; print(len(json.load(open('values.schema.json'))\
+#       ['properties']['server']['properties']))"
+#   45
+#
+# An earlier revision of this comment said 43. The count is the load-bearing
+# half of the sentence — it is the only evidence offered that `services` is
+# absent rather than merely unmentioned — so a wrong number undercuts the
+# argument it is supposed to support. The rest of the sentence was re-checked
+# against the same file when the count was corrected: `services` still is not
+# among them, `additionalProperties` still appears zero times, the file is
+# still 44,632 bytes, and `server.dev` still has exactly `devRootToken` and
+# `enabled`.
+#
+# The KV v2 mount at `secret/` that this plan's whole secret contract depends
+# on is created by `vault server -dev` itself, which always enables a KV v2
+# store at `secret/` on startup; that is Vault's dev-mode behaviour, not a
+# chart value. The `server.services` key that older Vault charts used was
+# removed upstream, and `services` is not in the chart's schema at all. The
+# `ClusterSecretStore` (`path: "secret"`, `version: "v2"`) and
+# `scripts/seed-vault.sh` both address exactly the mount dev mode creates, so
+# neither needs changing — but if you are reading this because a `kv`-service
+# block is missing, it was removed because it does nothing, and re-adding it
+# would reintroduce a silent no-op.

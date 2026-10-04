@@ -95,15 +95,32 @@ assert eval(sys.argv[2]), f"unexpected value: {d!r}"
   echo "  ok  secret/$1"
 }
 
-read_back platform/go-service/database-url          'd.startswith("postgres://") and "platform" in d'
+# Every read-back below asserts the EXACT value from the contract table, not a
+# shape. Six of these used to assert a URL scheme, which is the defect this
+# block exists to prevent: `d.startswith("postgres://")` is satisfied by
+# `postgres://wrong:wrong@wrong-host:5432/wrongdb`, so a seed pointed at the
+# wrong database would have printed `ok` on every run and nobody would have
+# found out until a service failed to connect.
+#
+# The static values are compared by equality. The two random ones cannot be —
+# they are generated per run — so they are asserted structurally (64 lowercase
+# hex chars) and, crucially, checked for being DIFFERENT from each other and
+# from the previous run's value is not asserted, because re-seeding is supposed
+# to change them. What matters for a random secret is that it exists, is the
+# right shape, and is not the empty string.
+#
+# `PG_DSN` and `MINISTACK_EP` are interpolated rather than repeated, so the
+# assertion and the write cannot drift apart: both read the same variable.
+
+read_back platform/go-service/database-url          "d == '''$PG_DSN'''"
 read_back platform/go-service/jwt-secret            'len(d) == 64 and all(c in "0123456789abcdef" for c in d)'
 read_back platform/go-service/aws-access-key-id      'd == "test"'
 read_back platform/go-service/aws-secret-access-key  'd == "test"'
-read_back platform/node-service/database-url         'd.startswith("postgres://")'
-read_back platform/node-service/redis-url            'd.startswith("redis://")'
+read_back platform/node-service/database-url         "d == '''$PG_DSN'''"
+read_back platform/node-service/redis-url            'd == "redis://redis.platform-system.svc:6379/0"'
 read_back platform/node-service/aws-access-key-id     'd == "test"'
 read_back platform/node-service/aws-secret-access-key 'd == "test"'
-read_back platform/frontend/nextauth-secret          'len(d) == 64'
-read_back ministack/endpoint                         'd.startswith("http://ministack.")'
+read_back platform/frontend/nextauth-secret          'len(d) == 64 and all(c in "0123456789abcdef" for c in d)'
+read_back ministack/endpoint                         "d == '''$MINISTACK_EP'''"
 
 echo "SEED COMPLETE"
