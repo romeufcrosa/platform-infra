@@ -135,8 +135,8 @@ an env var read at process start does not change underneath a running process.
 To add a path: add it to `scripts/seed-vault.sh` (the read-back list too — a
 path with no read-back is a path nothing has ever confirmed), add the matching
 `secretKey`/`remoteRef`/`property` to
-`kubernetes/platform-system/platform/vault.yaml` and to
-`tofu/modules/vault/external-secrets-example.yaml`, and re-run the seed.
+`examples/external-secrets/go-service-credentials.yaml`, and re-run the seed.
+`scripts/check-secret-contract.sh` fails if the two disagree.
 
 ## What breaks if you copy this to a real cluster
 
@@ -211,8 +211,10 @@ An object is declared in exactly one place.
 - OpenTofu owns: the `StatefulSet/vault`, its three Services, the
   `ServiceAccount`, the `ClusterSecretStore/vault` and the
   `external-secrets-vault-creds` Secret.
-- ArgoCD owns: the `ExternalSecret/go-service-credentials` in `dev`, via
-  `kubernetes/platform-system/platform/vault.yaml`.
+- **Nobody owns, by design:** the `ExternalSecret/go-service-credentials`
+  example, which lives at
+  `examples/external-secrets/go-service-credentials.yaml`. It is applied by
+  nothing and synced by nothing. It is a template, not a component.
 
 `kubernetes/platform-system/` is synced with `recurse: true`, `prune: true` and
 `selfHeal: true`, so a workload object declared there *and* in an OpenTofu
@@ -225,10 +227,19 @@ kubectl kustomize kubernetes/platform-system \
   | grep -cE '^kind: (Deployment|Service|ServiceAccount|Job|Namespace)'
 ```
 
-Must print `0`. An `ExternalSecret` is not in that list and is allowed to be
-there, because no OpenTofu resource applies it.
+Must print `0`.
 
-Note that `tofu/modules/vault/external-secrets-example.yaml` is a **copy for
-review, not a second owner** — no OpenTofu resource reads it. If anyone ever
-adds a `kubernetes_manifest` for that ExternalSecret, the two files become one
-object with two owners and the file becomes a tombstone instead.
+The example is not in that base for a second reason as well. The
+`platform-system` AppProject deliberately lists only the eight platform
+namespaces in `spec.destinations` and omits `dev`, `staging` and `prod`; ArgoCD
+validates a resource's namespace against the AppProject, not the Application's
+destination, so a service-namespace ExternalSecret could not be synced by that
+Application at all. Widening the invariant to accommodate an example would have
+cost more than the example was worth — and the ownership is right the other way
+round anyway, since a service's credentials manifest belongs to the service's
+repository. See `examples/README.md`.
+
+There is exactly one copy of that manifest. It used to be duplicated into
+`tofu/modules/vault/external-secrets-example.yaml`, where no tool read it; R29b
+applies to files as well as to objects, and the unread copy is the one that
+drifts.

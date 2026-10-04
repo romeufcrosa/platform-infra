@@ -1,7 +1,4 @@
-# Vault's WORKLOAD HAS NO DOCUMENTS IN THIS FILE, AND THAT IS RULE R29b.
-#
-# The one object that IS here — the ExternalSecret at the bottom — is here on
-# purpose, and the distinction matters, so it is worth stating precisely.
+# Vault HAS NO DOCUMENTS IN THIS FILE, AND THAT IS RULE R29b.
 #
 # R29b: an object may be declared in exactly ONE place. ArgoCD syncs this base
 # with `recurse: true`, `prune: true` and `selfHeal: true`, so anything
@@ -31,65 +28,41 @@
 # makes this safe. ArgoCD's prune only ever considers objects it has claimed,
 # and it has claimed none of these.
 #
-# WHY THE ExternalSecret BELOW IS THE EXCEPTION. It is not a second owner of
-# anything above. The OpenTofu module holds a copy of this manifest at
-# `tofu/modules/vault/external-secrets-example.yaml` purely so the shape is
-# reviewable in a PR, and NO OpenTofu resource applies it — the file is read by
-# no tool. The live ExternalSecret in the `dev` namespace has exactly one
-# owner, and it is ArgoCD, here. Had this manifest also been declared as a
-# `kubernetes_manifest` in the module, it would be a two-owner object like the
-# Deployment was, and it would be a tombstone too.
+# WHY THIS FILE IS A TOMBSTONE AND NOT JUST A STUB. It is kept rather than
+# deleted because a reader who finds a platform-system base with no Vault
+# component in it would reasonably assume Vault was never deployed. The absence
+# is the finding, and it should be legible without reconstructing the history.
 #
-# Why it belongs in GitOps at all: the seed script and this ExternalSecret
-# then change in one reviewed place. If the contract in
-# `scripts/seed-vault.sh` drifts from the `remoteRef.key` values here, the
-# secret stops refreshing and the ExternalSecret reports
-# `SecretSyncedError` in the cluster — a visible failure, not a service that
-# quietly comes up with yesterday's credentials.
+# AND WHERE THE ExternalSecret WENT. An earlier draft of this file carried the
+# `ExternalSecret/go-service-credentials` as a live document, on the argument
+# that it had only one owner because no OpenTofu resource applied it. That was
+# true and it was still the wrong place. The `platform-system` AppProject
+# lists eight platform namespaces in `spec.destinations` and deliberately omits
+# `dev`, `staging` and `prod` — see the comment on
+# `tofu/modules/argocd/bootstrap-appproject.yaml.tftpl` — and ArgoCD validates
+# a resource's namespace against the AppProject, not against the Application's
+# destination. The first sync would have failed with
+# `namespace is not permitted`.
+#
+# Widening that invariant to accommodate one example file would have been the
+# wrong trade: a platform component allowed to write into a production namespace
+# is a production incident waiting for a mistyped path. A service's
+# ExternalSecret is owned by the service's repository, not by the platform base.
+# It is now at:
+#
+#   examples/external-secrets/go-service-credentials.yaml
+#
+# which is applied by nothing and synced by nothing, and which Phase 2 copies
+# into each service repo under an app-namespaced AppProject. It is the canonical
+# copy; the duplicate that used to sit in `tofu/modules/vault/` is deleted.
+#
+# The drift guard the original placement was meant to provide is real and now
+# lives where both ends can see it:
+# `scripts/check-secret-contract.sh` compares the paths and leaf keys written by
+# `scripts/seed-vault.sh` against this example's `remoteRef.key` /
+# `remoteRef.property` pairs. A renamed path fails the check instead of
+# producing an ExternalSecret that silently stops refreshing.
 #
 # When Phase 2 hands this base to ArgoCD for the workload too, ownership has to
 # change deliberately, once, in review, in a commit that says so, with the
 # OpenTofu resources removed in the same change.
----
-apiVersion: external-secrets.io/v1beta1
-kind: ExternalSecret
-metadata:
-  name: go-service-credentials
-  namespace: dev
-spec:
-  refreshInterval: 1h
-  secretStoreRef:
-    name: vault
-    kind: ClusterSecretStore
-  target:
-    name: go-service-credentials
-    creationPolicy: Owner
-  data:
-    # The `property:` line is REQUIRED and the brief omitted it. Without it,
-    # `remoteRef` selects the WHOLE secret and External Secrets writes the
-    # value as a JSON envelope of every key in the Vault entry. Observed on the
-    # live cluster with the brief's exact manifest:
-    #
-    #   database-url = {"value":"postgres://platform:platform@postgres..."}
-    #
-    # A Go service doing `os.Getenv("DATABASE_URL")` gets a string starting
-    # with `{` and fails at connect time with an error naming neither Vault nor
-    # External Secrets. `scripts/seed-vault.sh` stores each value under a key
-    # named after the path's leaf segment, so `property:` names that key and
-    # the service receives the bare credential.
-    - secretKey: database-url
-      remoteRef:
-        key: platform/go-service/database-url
-        property: database-url
-    - secretKey: jwt-secret
-      remoteRef:
-        key: platform/go-service/jwt-secret
-        property: jwt-secret
-    - secretKey: aws-access-key-id
-      remoteRef:
-        key: platform/go-service/aws-access-key-id
-        property: aws-access-key-id
-    - secretKey: aws-secret-access-key
-      remoteRef:
-        key: platform/go-service/aws-secret-access-key
-        property: aws-secret-access-key

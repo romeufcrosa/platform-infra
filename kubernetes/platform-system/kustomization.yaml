@@ -45,18 +45,18 @@ resources:
   # kubernetes_deployment / kubernetes_service in tofu/modules/registry/ are the
   # live objects and a synced twin would be a second owner.
   - platform/prometheus.yaml
-  # Task 9. This file is a TOMBSTONE for Vault's workload (StatefulSet,
-  # Services, ServiceAccount, ClusterSecretStore and creds Secret are all
-  # OpenTofu-owned) plus one live object: the ExternalSecret that pulls the
-  # `platform/go-service/*` contract out of Vault. Registering a tombstone is
-  # harmless and registering the ExternalSecret is required, because no
-  # OpenTofu resource applies it — it is the only document in the file, and
-  # without this line the file contributes nothing at all. The R29b check
-  # (`kubectl kustomize kubernetes/platform-system | grep -cE '^kind:
-  # (Deployment|Service|ServiceAccount|Job|Namespace)'`) still returns 0: an
-  # ExternalSecret is none of those, and the workload it replaced is
-  # OpenTofu's. See the file's own header for the full ownership argument.
+  # Task 9. A TOMBSTONE: zero documents, like platform/ministack.yaml and
+  # platform/external-secrets.yaml. All of Vault's objects are OpenTofu-owned.
+  #
+  # It is listed rather than omitted, matching platform/ministack.yaml (Task 7).
+  # The repo is genuinely inconsistent here — ministack.yaml is listed,
+  # external-secrets.yaml is not, and both are zero-document tombstones — so
+  # this picks the convention that keeps a tombstone reachable from the base
+  # that owns it. `kubectl kustomize` tolerates a zero-document file: verified
+  # by temporarily adding platform/external-secrets.yaml to resources and
+  # building, exit 0. Listing it also means deleting the file is a visible
+  # kustomize error rather than a silent loss of its explanation.
   - platform/vault.yaml
   # Each component task appends its manifest here:
   #   platform/ministack.yaml     (Task 7) ✓ appended below
-  #   platform/vault.yaml         (Task 9) ✓ appended below
+  #   platform/vault.yaml         (Task 9) ✓ appended below (tombstone)
