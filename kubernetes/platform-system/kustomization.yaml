@@ -57,6 +57,8 @@ resources:
   # building, exit 0. Listing it also means deleting the file is a visible
   # kustomize error rather than a silent loss of its explanation.
   - platform/vault.yaml
+  - platform/dashboards-configmap.yaml
   # Each component task appends its manifest here:
   #   platform/ministack.yaml     (Task 7) ✓ appended below
   #   platform/vault.yaml         (Task 9) ✓ appended below (tombstone)
+  #   platform/dashboards-configmap.yaml  (Task 11) ✓ appended below

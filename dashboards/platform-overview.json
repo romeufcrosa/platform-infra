@@ -1,0 +1,221 @@
+{
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "uid": "platform-overview",
+  "title": "Platform Overview",
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Platform pods running",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "sum(kube_pod_status_phase{phase=\"Running\", namespace=~\"argocd|atlantis|ministack|vault|monitoring|registry|external-secrets|platform-system\"})",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "value",
+        "colorMode": "value"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Cluster API QPS",
+      "gridPos": {
+        "x": 6,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "sum(rate(APIServerRequestCount[5m]))",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "value",
+        "colorMode": "value"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Scrape health",
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "(1 - avg(up{job=~\"prometheus|kube-state-metrics|node-exporter\"})) * 100",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "value",
+        "colorMode": "value",
+        "thresholds": "0,1"
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Memory requests vs limits by namespace",
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "sum by (namespace) (kube_pod_container_resource_requests{resource=\"memory\"})",
+          "legendFormat": "{{namespace}}",
+          "refId": "A"
+        },
+        {
+          "expr": "sum by (namespace) (kube_pod_container_resource_limits{resource=\"memory\"})",
+          "legendFormat": "{{namespace}}",
+          "refId": "B"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single"
+        }
+      }
+    },
+    {
+      "type": "table",
+      "title": "Deployments available",
+      "gridPos": {
+        "x": 12,
+        "y": 4,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "kube_deployment_status_replicas_available",
+          "legendFormat": "{{namespace}} {{deployment}}",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "Namespace",
+            "desc": false
+          }
+        ]
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "CPU usage by namespace",
+      "gridPos": {
+        "x": 0,
+        "y": 12,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "sum(rate(container_cpu_usage_seconds_total[5m])) by (namespace)",
+          "legendFormat": "{{namespace}}",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single"
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Firing alerts",
+      "gridPos": {
+        "x": 12,
+        "y": 12,
+        "w": 6,
+        "h": 4
+      },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "sum(ALERTS{alertstate=\"firing\"})",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "value",
+        "colorMode": "value",
+        "thresholds": "0,1"
+      }
+    }
+  ]
+}

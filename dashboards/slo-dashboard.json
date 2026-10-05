@@ -1,0 +1,120 @@
+{
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "uid": "slo-dashboard",
+  "title": "SLO Dashboard",
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Availability SLO",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 8,
+        "h": 4
+      },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "sum(rate(http_requests_total{job=\"go-service\", status!~\"5..\"}[5m])) / sum(rate(http_requests_total{job=\"go-service\"}[5m]))",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "value",
+        "colorMode": "value",
+        "thresholds": "0.999"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Latency SLO",
+      "gridPos": {
+        "x": 8,
+        "y": 0,
+        "w": 8,
+        "h": 4
+      },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(http_request_duration_seconds_bucket{job=\"go-service\"}[5m])) by (le))",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "value",
+        "colorMode": "value",
+        "thresholds": "0.5"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Error budget remaining",
+      "gridPos": {
+        "x": 16,
+        "y": 0,
+        "w": 8,
+        "h": 4
+      },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "1 - ((1 - (sum(rate(http_requests_total{job=\"go-service\", status!~\"5..\"}[5m])) / sum(rate(http_requests_total{job=\"go-service\"}[5m])))) / (1 - 0.999))",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "value",
+        "colorMode": "value",
+        "thresholds": "0"
+      }
+    },
+    {
+      "type": "text",
+      "title": "SLO Explanation",
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 24,
+        "h": 4
+      },
+      "options": {
+        "content": "Availability SLO: Percentage of successful requests (status < 500) over total requests.\nLatency SLO: Percentage of requests under 500ms latency threshold.\nError budget remaining: 1 - (error_ratio / (1 - SLO_target)). Red when error budget is depleted.",
+        "mode": "markdown"
+      }
+    }
+  ]
+}

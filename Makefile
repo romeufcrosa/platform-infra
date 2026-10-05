@@ -4,6 +4,7 @@ SHELL := /bin/bash
 
 MINIKUBE_PROFILE ?= platform
 NAMESPACES := argocd atlantis ministack vault monitoring registry external-secrets platform-system
+ATLANTIS_PUBLIC_URL ?= https://REPLACE.trycloudflare.com
 
 .PHONY: help
 help: ## Show this help
@@ -47,6 +48,15 @@ port-forwards: ## Forward ArgoCD, Grafana, Vault, Ministack, registry to localho
 .PHONY: verify
 verify: ## Run the Phase 1 success-criteria gate
 	./scripts/verify-phase1.sh
+
+.PHONY: webhook-register
+webhook-register: ## Register the Atlantis webhook with GitHub (needs gh auth)
+	@test -n "$(GITHUB_PAT)" || { echo "GITHUB_PAT is not set"; exit 1; }
+	@SECRET="$$(cat local-secrets/atlantis-webhook-secret)"
+	gh api repos/$(GITHUB_ORG)/$(GITHUB_REPO)/hooks \
+	  -f config='{"url":"$(ATLANTIS_PUBLIC_URL)/events","content_type":"json","secret":"'"$$SECRET"'","insecure_ssl":"0"}' \
+	  -f 'events[]=pull_request' -X POST
+	@echo "webhook registered -> $(ATLANTIS_PUBLIC_URL)/events"
 
 .PHONY: fmt
 fmt: ## Format and validate OpenTofu config and the local-overrides guard
@@ -106,3 +116,7 @@ validate: ## Run the same checks as CI: tofu fmt/validate, kustomize build, helm
 	done; \
 	test -z "$$failed" || { echo "helm template failed for:$$failed"; exit 1; }
 	yamllint -c .yamllint.yaml . && echo "yamllint: OK"
+
+.PHONY: dashboards
+dashboards: ## Re-render Grafana dashboard ConfigMaps from dashboards/*.json
+	./scripts/render-dashboards.sh
