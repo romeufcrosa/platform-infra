@@ -17,6 +17,8 @@ VAULT_ADDR="${VAULT_ADDR:-http://localhost:8200}"
 TOKEN_FILE="${TOKEN_FILE:-local-secrets/vault-root-token}"
 PG_DSN="postgres://platform:platform@postgres.platform-system.svc:5432/platform?sslmode=disable"
 MINISTACK_EP="http://ministack.ministack.svc.cluster.local:4566"
+REDIS_URL="redis://redis.platform-system.svc:6379/0"
+TEST_VALUE="test"
 
 command -v vault >/dev/null || { echo "vault CLI not found" >&2; exit 1; }
 [ -f "$TOKEN_FILE" ] || { echo "no token at $TOKEN_FILE — run 'make deploy-infra' first" >&2; exit 1; }
@@ -65,12 +67,12 @@ kv_put_random() { # kv_put_random <path> — 32 bytes of entropy as 64 hex chars
 
 echo "seeding Vault at $VAULT_ADDR"
 kv_put platform/go-service/database-url           "$PG_DSN"
-kv_put platform/go-service/aws-access-key-id       "test"
-kv_put platform/go-service/aws-secret-access-key   "test"
+kv_put platform/go-service/aws-access-key-id       "$TEST_VALUE"
+kv_put platform/go-service/aws-secret-access-key   "$TEST_VALUE"
 kv_put platform/node-service/database-url          "$PG_DSN"
-kv_put platform/node-service/redis-url             "redis://redis.platform-system.svc:6379/0"
-kv_put platform/node-service/aws-access-key-id      "test"
-kv_put platform/node-service/aws-secret-access-key  "test"
+kv_put platform/node-service/redis-url             "$REDIS_URL"
+kv_put platform/node-service/aws-access-key-id      "$TEST_VALUE"
+kv_put platform/node-service/aws-secret-access-key  "$TEST_VALUE"
 kv_put ministack/endpoint                          "$MINISTACK_EP"
 kv_put_random platform/go-service/jwt-secret
 kv_put_random platform/frontend/nextauth-secret
@@ -109,18 +111,19 @@ assert eval(sys.argv[2]), f"unexpected value: {d!r}"
 # to change them. What matters for a random secret is that it exists, is the
 # right shape, and is not the empty string.
 #
-# `PG_DSN` and `MINISTACK_EP` are interpolated rather than repeated, so the
-# assertion and the write cannot drift apart: both read the same variable.
+# The write operations use variables (PG_DSN, MINISTACK_EP, REDIS_URL, TEST_VALUE) to avoid
+# duplicating literals. The read-back assertions use hard-coded strings from the brief.
+# If the expected value changes, both the variable and the hard-coded string must be updated.
 
-read_back platform/go-service/database-url          "d == '''$PG_DSN'''"
+read_back platform/go-service/database-url          'd == "postgres://platform:platform@postgres.platform-system.svc:5432/platform?sslmode=disable"'
 read_back platform/go-service/jwt-secret            'len(d) == 64 and all(c in "0123456789abcdef" for c in d)'
 read_back platform/go-service/aws-access-key-id      'd == "test"'
 read_back platform/go-service/aws-secret-access-key  'd == "test"'
-read_back platform/node-service/database-url         "d == '''$PG_DSN'''"
+read_back platform/node-service/database-url         'd == "postgres://platform:platform@postgres.platform-system.svc:5432/platform?sslmode=disable"'
 read_back platform/node-service/redis-url            'd == "redis://redis.platform-system.svc:6379/0"'
 read_back platform/node-service/aws-access-key-id     'd == "test"'
 read_back platform/node-service/aws-secret-access-key 'd == "test"'
 read_back platform/frontend/nextauth-secret          'len(d) == 64 and all(c in "0123456789abcdef" for c in d)'
-read_back ministack/endpoint                         "d == '''$MINISTACK_EP'''"
+read_back ministack/endpoint                         'd == "http://ministack.ministack.svc.cluster.local:4566"'
 
 echo "SEED COMPLETE"
