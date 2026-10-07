@@ -1,0 +1,14 @@
+cluster:
+  instances: 1
+  storage:
+    size: 8Gi
+postgresql:
+  parameters:
+    database: orders
+    username: 0VqkEgqI7O7USG7n
+    password: zWfOUqSSHr60kaUp
+poolers:
+  - name: rw
+    type: rw
+    poolMode: transaction
+    instances: 1

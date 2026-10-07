@@ -29,7 +29,8 @@ output "endpoints" {
     prometheus = "http://localhost:9090"
     registry   = "localhost:5000"
     ministack  = "http://localhost:4566"
-    vault      = "http://localhost:8200"
+    vault      = "http://localhost:8200",
+    atlantis    = "http://localhost:8080"
   }
 }
 
@@ -80,4 +81,16 @@ output "local_overrides" {
 output "argocd_password_file" {
   description = "Path to the ArgoCD admin password file."
   value       = module.argocd.password_file
+}
+
+output "postgres_connection_string" {
+  description = "PostgreSQL connection string for the Go service."
+  value       = module.postgresql.connection_string
+  sensitive   = true
+}
+
+output "pgbouncer_connection_string" {
+  description = "PgBouncer connection string for the Go service."
+  value       = module.postgresql.pgbouncer_connection_string
+  sensitive   = true
 }

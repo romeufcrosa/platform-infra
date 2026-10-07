@@ -290,3 +290,39 @@ module "vault" {
   # naming the wrong task.
   depends_on = [module.namespaces, module.external_secrets]
 }
+
+#   8. postgresql        (Task 2 - Phase 2)
+
+
+# Generate PostgreSQL credentials
+resource "random_password" "postgres_user" {
+  length  = 16
+  special = false
+}
+
+resource "random_password" "postgres_password" {
+  length  = 16
+  special = false
+}
+
+resource "local_file" "postgres_user" {
+  filename        = "${path.root}/../local-secrets/postgres-user"
+  content         = random_password.postgres_user.result
+  file_permission = "0600"
+}
+
+resource "local_file" "postgres_password" {
+  filename        = "${path.root}/../local-secrets/postgres-password"
+  content         = random_password.postgres_password.result
+  file_permission = "0600"
+}
+
+module "postgresql" {
+  source      = "./modules/postgresql"
+  namespace   = "dev"
+  postgres_user = random_password.postgres_user.result
+  postgres_password = random_password.postgres_password.result
+  postgres_db   = "orders"
+  namespace_dependency = module.namespaces
+  depends_on   = [module.namespaces]
+}
