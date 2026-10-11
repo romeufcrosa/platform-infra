@@ -9,3 +9,4 @@ resources:
   - dev.yaml
   - staging.yaml
   - prod.yaml
+  - node-services.yaml
