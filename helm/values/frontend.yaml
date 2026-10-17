@@ -1,0 +1,45 @@
+# Overrides for the frontend Helm chart in the dev namespace
+image:
+  tag: "dev"  # will be updated by CI via update-infra target
+
+replicaCount: 2
+
+resources:
+  limits:
+    cpu: 200m
+    memory: 256Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 70
+
+env:
+  - name: NEXT_PUBLIC_API_GO_URL
+    value: "http://go-service.dev.svc.cluster.local:8080"
+  - name: NEXT_PUBLIC_API_NODE_URL
+    value: "http://node-service.dev.svc.cluster.local:3001"
+  - name: NEXT_PUBLIC_WS_GO_URL
+    value: "ws://go-service.dev.svc.cluster.local:8080"
+  - name: NEXT_PUBLIC_WS_NODE_URL
+    value: "ws://node-service.dev.svc.cluster.local:3001"
+  - name: NEXTAUTH_SECRET
+    valueFrom:
+      secretKeyRef:
+        name: frontend-secrets
+        key: NEXTAUTH_SECRET
+  - name: GITHUB_CLIENT_ID
+    valueFrom:
+      secretKeyRef:
+        name: frontend-secrets
+        key: GITHUB_CLIENT_ID
+  - name: GITHUB_CLIENT_SECRET
+    valueFrom:
+      secretKeyRef:
+        name: frontend-secrets
+        key: GITHUB_CLIENT_SECRET
