@@ -33,7 +33,7 @@ jobs:
         run: echo "ATLANTIS_TOKEN is not configured; skipping (see docs/runbooks)."
       - name: Comment the apply command
         if: ${{ secrets.ATLANTIS_TOKEN != '' }}
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           github-token: ${{ secrets.ATLANTIS_TOKEN }}
           script: |
