@@ -9,3 +9,4 @@ resources:
   - go-service-dev.yaml
   - node-service-dev.yaml
   - frontend-dev.yaml
+  - ../applicationset/services-applicationset.yaml
