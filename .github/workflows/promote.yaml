@@ -1,0 +1,195 @@
+name: Promote Environment
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment to promote to'
+        type: choice
+        required: true
+        options:
+          - staging
+          - prod
+      service:
+        description: 'Service to promote (or "all" for all services)'
+        type: choice
+        required: true
+        options:
+          - all
+          - frontend
+          - go-service
+          - node-service
+      from_environment:
+        description: 'Source environment to promote from'
+        type: choice
+        required: true
+        options:
+          - dev
+          - staging
+      dry_run:
+        description: 'Run in dry-run mode (no actual sync)'
+        type: boolean
+        required: false
+        default: false
+
+jobs:
+  validate:
+    name: Validate Source Environment
+    runs-on: ubuntu-latest
+    outputs:
+      services: ${{ steps.set-output.outputs.services }}
+    steps:
+      - name: Checkout platform-infra
+        uses: actions/checkout@v4
+        with:
+          repository: romeufcrosa/platform-infra
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install ArgoCD CLI
+        run: |
+          curl -sSL -o /usr/local/bin/argocd https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
+          chmod +x /usr/local/bin/argocd
+
+      - name: Login to ArgoCD
+        run: |
+          argocd login ${{ secrets.ARGOCD_SERVER }} --auth-token ${{ secrets.ARGOCD_TOKEN }} --insecure
+
+      - name: Determine services to promote
+        id: set-output
+        run: |
+          if [ "${{ github.event.inputs.service }}" = "all" ]; then
+            echo "services=frontend,go-service,node-service" >> $GITHUB_OUTPUT
+          else
+            echo "services=${{ github.event.inputs.service }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Validate source apps are Synced and Healthy
+        run: |
+          SERVICES="${{ steps.set-output.outputs.services }}"
+          IFS=',' read -ra SVC_ARRAY <<< "$SERVICES"
+          for svc in "${SVC_ARRAY[@]}"; do
+            APP_NAME="${svc}-${{ github.event.inputs.from_environment }}"
+            echo "Checking $APP_NAME..."
+            STATUS=$(argocd app get $APP_NAME -o json | jq -r '.status.sync.status')
+            HEALTH=$(argocd app get $APP_NAME -o json | jq -r '.status.health.status')
+            if [ "$STATUS" != "Synced" ] || [ "$HEALTH" != "Healthy" ]; then
+              echo "::error::Application $APP_NAME is not ready (sync: $STATUS, health: $HEALTH)"
+              exit 1
+            fi
+            echo "$APP_NAME is Synced and Healthy"
+          done
+
+  promote:
+    name: Promote to ${{ github.event.inputs.environment }}
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment }}
+    steps:
+      - name: Checkout platform-infra
+        uses: actions/checkout@v4
+        with:
+          repository: romeufcrosa/platform-infra
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install ArgoCD CLI
+        run: |
+          curl -sSL -o /usr/local/bin/argocd https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
+          chmod +x /usr/local/bin/argocd
+
+      - name: Login to ArgoCD
+        run: |
+          argocd login ${{ secrets.ARGOCD_SERVER }} --auth-token ${{ secrets.ARGOCD_TOKEN }} --insecure
+
+      - name: Sync target applications
+        run: |
+          SERVICES="${{ needs.validate.outputs.services }}"
+          IFS=',' read -ra SVC_ARRAY <<< "$SERVICES"
+          for svc in "${SVC_ARRAY[@]}"; do
+            APP_NAME="${svc}-${{ github.event.inputs.environment }}"
+            echo "Promoting $APP_NAME..."
+            if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+              argocd app sync $APP_NAME --dry-run --prune
+            else
+              argocd app sync $APP_NAME --prune
+            fi
+          done
+
+  verify:
+    name: Verify Promotion
+    needs: promote
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout platform-infra
+        uses: actions/checkout@v4
+        with:
+          repository: romeufcrosa/platform-infra
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install ArgoCD CLI
+        run: |
+          curl -sSL -o /usr/local/bin/argocd https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
+          chmod +x /usr/local/bin/argocd
+
+      - name: Login to ArgoCD
+        run: |
+          argocd login ${{ secrets.ARGOCD_SERVER }} --auth-token ${{ secrets.ARGOCD_TOKEN }} --insecure
+
+      - name: Wait for applications to be Healthy
+        run: |
+          SERVICES="${{ needs.validate.outputs.services }}"
+          IFS=',' read -ra SVC_ARRAY <<< "$SERVICES"
+          for svc in "${SVC_ARRAY[@]}"; do
+            APP_NAME="${svc}-${{ github.event.inputs.environment }}"
+            echo "Waiting for $APP_NAME to become Healthy..."
+            argocd app wait $APP_NAME --health --timeout 300
+            STATUS=$(argocd app get $APP_NAME -o json | jq -r '.status.sync.status')
+            HEALTH=$(argocd app get $APP_NAME -o json | jq -r '.status.health.status')
+            if [ "$STATUS" != "Synced" ] || [ "$HEALTH" != "Healthy" ]; then
+              echo "::error::Application $APP_NAME failed verification (sync: $STATUS, health: $HEALTH)"
+              exit 1
+            fi
+            echo "$APP_NAME verified: Synced and Healthy"
+          done
+
+      - name: Run verification script
+        if: hashFiles('scripts/verify-promotion.sh') != ''
+        run: |
+          chmod +x scripts/verify-promotion.sh
+          ./scripts/verify-promotion.sh ${{ github.event.inputs.environment }} "${{ needs.validate.outputs.services }}"
+
+  notify:
+    name: Notify Results
+    needs: [validate, promote, verify]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Determine overall status
+        id: status
+        run: |
+          if [[ "${{ needs.validate.result }}" == "success" && "${{ needs.promote.result }}" == "success" && "${{ needs.verify.result }}" == "success" ]]; then
+            echo "status=success" >> $GITHUB_OUTPUT
+            echo "message=✅ Promotion to ${{ github.event.inputs.environment }} completed successfully" >> $GITHUB_OUTPUT
+          else
+            echo "status=failure" >> $GITHUB_OUTPUT
+            echo "message=❌ Promotion to ${{ github.event.inputs.environment }} failed" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Post to GitHub Step Summary
+        run: |
+          echo "${{ steps.status.outputs.message }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** ${{ github.event.inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Source:** ${{ github.event.inputs.from_environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Services:** ${{ needs.validate.outputs.services }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Dry Run:** ${{ github.event.inputs.dry_run }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Validate:** ${{ needs.validate.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Promote:** ${{ needs.promote.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Verify:** ${{ needs.verify.result }}" >> $GITHUB_STEP_SUMMARY
+
+      - name: Notify Slack (if configured)
+        if: env.SLACK_WEBHOOK_URL != ''
+        run: |
+          curl -X POST -H 'Content-type: application/json' \
+            --data "{\"text\":\"${{ steps.status.outputs.message }}\nEnvironment: ${{ github.event.inputs.environment }}\nServices: ${{ needs.validate.outputs.services }}\"}" \
+            ${{ env.SLACK_WEBHOOK_URL }}

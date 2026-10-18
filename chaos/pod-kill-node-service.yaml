@@ -1,0 +1,91 @@
+apiVersion: litmuschaos.io/v1alpha1
+kind: ChaosEngine
+metadata:
+  name: node-service-pod-kill
+  namespace: litmus
+spec:
+  appinfo:
+    appns: "staging"
+    applabel: "app.kubernetes.io/name=node-service"
+  chaosServiceAccount: litmus-admin
+  jobCleanUpPolicy: "delete"
+  experiments:
+    - name: pod-delete
+      spec:
+        components:
+          env:
+            - name: TOTAL_CHAOS_DURATION
+              value: "30"
+            - name: CHAOS_INTERVAL
+              value: "10"
+            - name: FORCE
+              value: "false"
+            - name: PODS_AFFECTED_PERC
+              value: "50"
+            - name: LABEL_SELECTOR
+              value: "app.kubernetes.io/name=node-service"
+---
+apiVersion: litmuschaos.io/v1alpha1
+kind: ChaosExperiment
+metadata:
+  name: pod-delete
+  namespace: litmus
+spec:
+  definition:
+    scope: Namespaced
+    permissions:
+      - apiGroups: [""]
+        resources: ["pods"]
+        verbs: ["get", "list", "delete"]
+      - apiGroups: ["apps"]
+        resources: ["deployments", "replicasets"]
+        verbs: ["get", "list"]
+      - apiGroups: ["argoproj.io"]
+        resources: ["applications"]
+        verbs: ["get", "list", "patch"]
+    image: litmuschaos/go-runner:2.13.0
+    imagePullPolicy: Always
+    args:
+      - -c
+      - |
+        #!/bin/bash
+        set -e
+        echo "Starting pod-delete chaos experiment"
+        echo "Target: $LABEL_SELECTOR in namespace $TARGET_NAMESPACE"
+        echo "Duration: ${TOTAL_CHAOS_DURATION}s, Interval: ${CHAOS_INTERVAL}s"
+        echo "Force: ${FORCE}, Pods affected: ${PODS_AFFECTED_PERC}%"
+
+        PODS=$(kubectl get pods -n $TARGET_NAMESPACE -l $LABEL_SELECTOR -o jsonpath='{.items[*].metadata.name}')
+        POD_COUNT=$(echo $PODS | wc -w)
+        KILL_COUNT=$((POD_COUNT * PODS_AFFECTED_PERC / 100))
+
+        if [ $KILL_COUNT -eq 0 ]; then
+          KILL_COUNT=1
+        fi
+
+        echo "Found $POD_COUNT pods, will kill $KILL_COUNT"
+
+        END_TIME=$(($(date +%s) + TOTAL_CHAOS_DURATION))
+        while [ $(date +%s) -lt $END_TIME ]; do
+          SELECTED=$(echo $PODS | tr ' ' '\n' | shuf -n $KILL_COUNT | tr '\n' ' ')
+          for POD in $SELECTED; do
+            echo "Killing pod: $POD"
+            if [ "$FORCE" = "true" ]; then
+              kubectl delete pod $POD -n $TARGET_NAMESPACE --grace-period=0 --force
+            else
+              kubectl delete pod $POD -n $TARGET_NAMESPACE
+            fi
+          done
+
+          echo "Waiting ${CHAOS_INTERVAL}s for recovery..."
+          sleep $CHAOS_INTERVAL
+
+          READY=$(kubectl get pods -n $TARGET_NAMESPACE -l $LABEL_SELECTOR -o jsonpath='{.items[*].status.conditions[?(@.type=="Ready")].status}' | grep -c True || echo 0)
+          if [ $READY -eq $POD_COUNT ]; then
+            echo "All pods recovered successfully"
+          else
+            echo "WARNING: Only $READY/$POD_COUNT pods ready"
+          fi
+        done
+
+        echo "Chaos experiment completed"

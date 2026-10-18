@@ -1,0 +1,94 @@
+# runatlantis/atlantis chart 6.16.0 (appVersion v0.48.0), from
+# https://runatlantis.github.io/helm-charts.
+#
+# The chart is FLAT: every key below is top level. There is no `frontend:`, no
+# `server:`, no `terraform:`, no `podSecurityContext:`. Those are all plausible
+# and all wrong, and values.yaml in the chart ships `"additionalProperties":
+# false` in its JSON schema — an invented key is not ignored, it fails
+# `helm template` and `helm install` outright.
+#
+# Two of the keys that replace them are default-load-bearing: `ingress.enabled`
+# and `orgAllowlist` both default to values that break Phase 1, and both are
+# called out inline below. This file is a good worked example of the project
+# rule that a default is a value too, and it has to be read off the chart.
+
+# The public entrypoint. In-cluster the service is ClusterIP; the tunnel
+# terminates outside the cluster, so no ingress controller is required for
+# Phase 1. minikube's ingress addon (Task 2) is enabled anyway for Phase 2.
+service:
+  type: ClusterIP
+  port: 8080         # the Service's port, and what port-forwards.sh targets
+  targetPort: 4141   # the pod's port, and what the chart sets ATLANTIS_PORT to
+
+# The chart's ingress default is enabled:true with an empty host, and the
+# statefulset then renders `ATLANTIS_ATLANTIS_URL=http://` — a URL with no host,
+# which silently breaks the Apply button in every comment Atlantis posts. Off,
+# explicitly, rather than left to a default Phase 1 does not want.
+ingress:
+  enabled: false
+
+# This is a regex, and the chart's default is the literal string "<replace-me>".
+# Atlantis compiles it as the repo allowlist and then refuses every repository
+# with `repo not allowlisted` — the exact symptom Step 9 blames on repo config.
+# `.*` is the right breadth for a single-org local facsimile; tighten to
+# 'github\.com/<org>/.*' before this points at anything real.
+orgAllowlist: '.*'
+
+# Atlantis server-side repo config. This is a top-level *inline YAML string*,
+# not a path: the chart renders it into its own ConfigMap
+# (templates/configmap-repo-config.yaml) and mounts that at
+# /etc/atlantis/repos.yaml. Nothing in the 6.x line mounts a Secret of repo
+# config, so there is no file path to point this at. The module supplies the
+# string — the *contents* of the repo-root `atlantis.yaml` rendered in Step 3.
+repoConfig: ""
+
+# GitHub App is the production path; the PAT is the local path. Only the
+# non-secret half lives here: `github.user` is what makes the chart wire up
+# ATLANTIS_GH_USER at all. The token and the webhook secret are read by the
+# chart from a Kubernetes Secret, so the module sets `vcsSecretName` and the
+# PAT never enters a values file or, more importantly, the Helm release's own
+# stored values (which are plaintext base64 in the namespace).
+github:
+  user: git
+
+# OpenTofu, not Terraform. This is the single most important value in the file
+# for this project: the chart defaults to `terraform`, so an Atlantis that
+# plans with the wrong binary reports success and produces plans nobody asked
+# for. `terraform { download: false }` from the old version of this file is not
+# a key that exists; the real switch is this one, and it changes which binary
+# Atlantis downloads, not whether it downloads.
+defaultTFDistribution: opentofu
+defaultTFVersion: "1.7.0"   # the OpenTofu version pinned in .tool-versions
+
+replicaCount: 1
+
+# The chart already runs Atlantis as uid 100 with fsGroup 1000 and says so
+# ("it is not recommended to run atlantis as root"). Note this is
+# `statefulSet.securityContext`, not a top-level `podSecurityContext` — the
+# StatefulSet template renders it as the *pod* security context, and
+# `containerSecurityContext` is the separate *container* one. The pod context
+# is substituted wholesale rather than merged, so every field it drops is a
+# field silently going back to the Kubernetes default, which is why
+# fsGroupChangePolicy is restated here.
+statefulSet:
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 100
+    fsGroup: 1000
+    fsGroupChangePolicy: OnRootMismatch
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: "1"
+    memory: 1Gi
+
+# The chart's own bats test pod. Harmless, but it renders into every
+# `helm template` in CI and it is not what this project is teaching.
+test:
+  enabled: false

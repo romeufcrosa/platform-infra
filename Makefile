@@ -120,3 +120,7 @@ validate: ## Run the same checks as CI: tofu fmt/validate, kustomize build, helm
 .PHONY: dashboards
 dashboards: ## Re-render Grafana dashboard ConfigMaps from dashboards/*.json
 	./scripts/render-dashboards.sh
+
+.PHONY: seed
+seed: ## Load the local secret material into Vault (needs a running Vault)
+	./scripts/seed-vault.sh

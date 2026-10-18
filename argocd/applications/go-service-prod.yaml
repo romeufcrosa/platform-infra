@@ -1,0 +1,21 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: go-service-prod
+  namespace: argocd
+spec:
+  project: prod
+  source:
+    repoURL: https://github.com/romeufcrosa/platform-services-go.git
+    targetRevision: main
+    path: helm/go-service
+    helm:
+      valueFiles:
+        - values-prod.yaml
+        - values.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: prod
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
