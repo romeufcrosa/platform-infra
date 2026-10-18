@@ -1,0 +1,212 @@
+name: Load Testing
+
+on:
+  schedule:
+    # Run daily at 03:00 UTC (after backup cronjob at 02:00)
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+    inputs:
+      test_type:
+        description: 'Load test to run'
+        type: choice
+        required: true
+        default: 'combined'
+        options:
+          - combined
+          - go-service
+          - node-service
+          - frontend
+          - all
+      environment:
+        description: 'Target environment'
+        type: choice
+        required: true
+        default: 'staging'
+        options:
+          - dev
+          - staging
+          - prod
+      rps_stages:
+        description: 'RPS stages as JSON array'
+        type: string
+        required: false
+        default: '[{"duration": "1m", "target": 5}, {"duration": "2m", "target": 20}, {"duration": "1m", "target": 50}, {"duration": "1m", "target": 20}, {"duration": "30s", "target": 0}]'
+
+jobs:
+  load-test:
+    name: Load Test (${{ github.event.inputs.test_type || 'combined' }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      K6_PROJECT_ID: ${{ secrets.K6_PROJECT_ID }}
+      K6_API_TOKEN: ${{ secrets.K6_API_TOKEN }}
+    steps:
+      - name: Checkout platform-infra
+        uses: actions/checkout@v4
+        with:
+          repository: romeufcrosa/platform-infra
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install k6
+        run: |
+          sudo gpg -k
+          sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
+          sudo apt-get update
+          sudo apt-get install -y k6
+
+      - name: Determine test script
+        id: test-script
+        run: |
+          case "${{ github.event.inputs.test_type }}" in
+            go-service)
+              echo "script=tests/load/go-service-load.js" >> $GITHUB_OUTPUT
+              ;;
+            node-service)
+              echo "script=tests/load/node-service-load.js" >> $GITHUB_OUTPUT
+              ;;
+            frontend)
+              echo "script=tests/load/frontend-load.js" >> $GITHUB_OUTPUT
+              ;;
+            combined)
+              echo "script=tests/load/combined-load.js" >> $GITHUB_OUTPUT
+              ;;
+            all)
+              echo "script=all" >> $GITHUB_OUTPUT
+              ;;
+            *)
+              echo "script=tests/load/combined-load.js" >> $GITHUB_OUTPUT
+              ;;
+          esac
+
+      - name: Set environment URLs
+        id: env-urls
+        run: |
+          case "${{ github.event.inputs.environment }}" in
+            dev)
+              echo "go_url=http://go-service.dev.svc.cluster.local:8080" >> $GITHUB_OUTPUT
+              echo "node_url=http://node-service.dev.svc.cluster.local:3000" >> $GITHUB_OUTPUT
+              echo "node_ws_url=ws://node-service.dev.svc.cluster.local:3001" >> $GITHUB_OUTPUT
+              echo "frontend_url=http://frontend.dev.svc.cluster.local:3000" >> $GITHUB_OUTPUT
+              echo "frontend_ws_url=ws://frontend.dev.svc.cluster.local:3001" >> $GITHUB_OUTPUT
+              ;;
+            staging)
+              echo "go_url=http://go-service.staging.svc.cluster.local:8080" >> $GITHUB_OUTPUT
+              echo "node_url=http://node-service.staging.svc.cluster.local:3000" >> $GITHUB_OUTPUT
+              echo "node_ws_url=ws://node-service.staging.svc.cluster.local:3001" >> $GITHUB_OUTPUT
+              echo "frontend_url=http://frontend.staging.svc.cluster.local:3000" >> $GITHUB_OUTPUT
+              echo "frontend_ws_url=ws://frontend.staging.svc.cluster.local:3001" >> $GITHUB_OUTPUT
+              ;;
+            prod)
+              echo "go_url=http://go-service.prod.svc.cluster.local:8080" >> $GITHUB_OUTPUT
+              echo "node_url=http://node-service.prod.svc.cluster.local:3000" >> $GITHUB_OUTPUT
+              echo "node_ws_url=ws://node-service.prod.svc.cluster.local:3001" >> $GITHUB_OUTPUT
+              echo "frontend_url=http://frontend.prod.svc.cluster.local:3000" >> $GITHUB_OUTPUT
+              echo "frontend_ws_url=ws://frontend.prod.svc.cluster.local:3001" >> $GITHUB_OUTPUT
+              ;;
+          esac
+
+      - name: Run k6 load test
+        if: steps.test-script.outputs.script != 'all'
+        env:
+          GO_SERVICE_URL: ${{ steps.env-urls.outputs.go_url }}
+          NODE_SERVICE_URL: ${{ steps.env-urls.outputs.node_url }}
+          NODE_SERVICE_WS_URL: ${{ steps.env-urls.outputs.node_ws_url }}
+          FRONTEND_URL: ${{ steps.env-urls.outputs.frontend_url }}
+          FRONTEND_WS_URL: ${{ steps.env-urls.outputs.frontend_ws_url }}
+          API_GO_URL: ${{ steps.env-urls.outputs.go_url }}
+          API_NODE_URL: ${{ steps.env-urls.outputs.node_url }}
+          RPS_STAGES: ${{ github.event.inputs.rps_stages }}
+        run: |
+          k6 run \
+            --out json=results.json \
+            --summary-export=summary.json \
+            ${{ steps.test-script.outputs.script }}
+
+      - name: Run all k6 load tests
+        if: steps.test-script.outputs.script == 'all'
+        env:
+          GO_SERVICE_URL: ${{ steps.env-urls.outputs.go_url }}
+          NODE_SERVICE_URL: ${{ steps.env-urls.outputs.node_url }}
+          NODE_SERVICE_WS_URL: ${{ steps.env-urls.outputs.node_ws_url }}
+          FRONTEND_URL: ${{ steps.env-urls.outputs.frontend_url }}
+          FRONTEND_WS_URL: ${{ steps.env-urls.outputs.frontend_ws_url }}
+          API_GO_URL: ${{ steps.env-urls.outputs.go_url }}
+          API_NODE_URL: ${{ steps.env-urls.outputs.node_url }}
+          RPS_STAGES: ${{ github.event.inputs.rps_stages }}
+        run: |
+          for script in tests/load/*.js; do
+            echo "Running $script..."
+            k6 run --out json=results-$(basename $script .js).json --summary-export=summary-$(basename $script .js).json "$script" || true
+          done
+
+      - name: Parse results
+        id: parse-results
+        run: |
+          if [ -f summary.json ]; then
+            cat summary.json
+            # Extract key metrics
+            P95=$(jq -r '.metrics.http_req_duration.values["p(95)"]' summary.json 2>/dev/null || echo "N/A")
+            ERROR_RATE=$(jq -r '.metrics.http_req_failed.values.rate' summary.json 2>/dev/null || echo "N/A")
+            echo "p95_latency=$P95" >> $GITHUB_OUTPUT
+            echo "error_rate=$ERROR_RATE" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Check thresholds
+        run: |
+          if [ -f summary.json ]; then
+            # Check if thresholds passed
+            PASSED=$(jq -r '.root_group.checks | to_entries[] | select(.value.passes > 0 and .value.fails == 0) | .key' summary.json 2>/dev/null | wc -l)
+            TOTAL=$(jq -r '.root_group.checks | length' summary.json 2>/dev/null)
+            FAILED=$(jq -r '.root_group.checks | to_entries[] | select(.value.fails > 0) | .key' summary.json 2>/dev/null | wc -l)
+
+            echo "Passed checks: $PASSED/$TOTAL"
+            echo "Failed checks: $FAILED"
+
+            if [ "$FAILED" -gt 0 ]; then
+              echo "::error::Some thresholds failed"
+              jq -r '.root_group.checks | to_entries[] | select(.value.fails > 0) | "\(.key): \(.value.fails) failures"' summary.json
+              exit 1
+            fi
+          fi
+
+      - name: Upload results as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: k6-results-${{ github.event.inputs.test_type || 'combined' }}-${{ github.event.inputs.environment || 'staging' }}
+          path: |
+            results*.json
+            summary*.json
+          retention-days: 30
+
+      - name: Publish to Grafana Cloud (if configured)
+        if: env.K6_API_TOKEN != '' && env.K6_PROJECT_ID != ''
+        run: |
+          k6 login cloud --token $K6_API_TOKEN
+          k6 run --out cloud --project-id $K6_PROJECT_ID ${{ steps.test-script.outputs.script }}
+
+      - name: Post results to GitHub Step Summary
+        run: |
+          echo "# Load Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Test Type:** ${{ github.event.inputs.test_type || 'combined' }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** ${{ github.event.inputs.environment || 'staging' }}" >> $GITHUB_STEP_SUMMARY
+          echo "**RPS Stages:** ${{ github.event.inputs.rps_stages }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -f summary.json ]; then
+            echo "## Key Metrics" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+            echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+            echo "| p95 Latency | ${{ steps.parse-results.outputs.p95_latency }}ms |" >> $GITHUB_STEP_SUMMARY
+            echo "| Error Rate | ${{ steps.parse-results.outputs.error_rate }}% |" >> $GITHUB_STEP_SUMMARY
+            echo "| Total Requests | $(jq -r '.metrics.http_reqs.values.count' summary.json) |" >> $GITHUB_STEP_SUMMARY
+            echo "| Avg RPS | $(jq -r '.metrics.http_reqs.values.rate' summary.json) |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Notify Slack (if configured)
+        if: env.SLACK_WEBHOOK_URL != '' && failure()
+        run: |
+          curl -X POST -H 'Content-type: application/json' \
+            --data "{\"text\":\"❌ Load test failed for ${{ github.event.inputs.test_type || 'combined' }} in ${{ github.event.inputs.environment || 'staging' }}\nError Rate: ${{ steps.parse-results.outputs.error_rate }}%\np95 Latency: ${{ steps.parse-results.outputs.p95_latency }}ms\"}" \
+            ${{ env.SLACK_WEBHOOK_URL }}
