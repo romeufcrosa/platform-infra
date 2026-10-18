@@ -1,0 +1,232 @@
+name: Chaos Engineering
+
+on:
+  workflow_dispatch:
+    inputs:
+      experiment:
+        description: 'Chaos experiment to run'
+        type: choice
+        required: true
+        default: 'pod-kill-go-service'
+        options:
+          - pod-kill-go-service
+          - pod-kill-node-service
+          - pod-kill-frontend
+          - network-latency
+          - cpu-stress
+          - all
+      environment:
+        description: 'Target environment'
+        type: choice
+        required: true
+        default: 'staging'
+        options:
+          - dev
+          - staging
+      duration:
+        description: 'Experiment duration in seconds'
+        type: string
+        required: false
+        default: '60'
+      steady_state_check:
+        description: 'Verify steady state before experiment'
+        type: boolean
+        required: false
+        default: true
+
+jobs:
+  chaos:
+    name: Chaos Experiment (${{ github.event.inputs.experiment }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: ${{ github.event.inputs.environment }}
+    steps:
+      - name: Checkout platform-infra
+        uses: actions/checkout@v4
+        with:
+          repository: romeufcrosa/platform-infra
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install LitmusChaos CLI
+        run: |
+          curl -sSL https://litmuschaos.github.io/litmusctl/install.sh | bash
+          export PATH=$PATH:$HOME/.litmusctl/bin
+          echo "$HOME/.litmusctl/bin" >> $GITHUB_PATH
+
+      - name: Verify cluster access
+        run: |
+          kubectl cluster-info
+          kubectl get nodes
+
+      - name: Install LitmusChaos Operator (if not present)
+        run: |
+          if ! kubectl get crd chaosengines.litmuschaos.io &>/dev/null; then
+            echo "Installing LitmusChaos operator..."
+            kubectl apply -f https://litmuschaos.github.io/litmus/litmus-operator-v3.0.0.yaml
+            kubectl wait --for=condition=available --timeout=120s deployment/litmus-operator -n litmus
+          else
+            echo "LitmusChaos operator already installed"
+          fi
+
+      - name: Create litmus namespace and RBAC
+        run: |
+          kubectl create namespace litmus --dry-run=client -o yaml | kubectl apply -f -
+          kubectl apply -f chaos/pod-kill-go-service.yaml --selector=rbac.authorization.k8s.io/v1=ClusterRole --dry-run=client -o yaml | kubectl apply -f - || true
+
+      - name: Set experiment variables
+        id: experiment-vars
+        run: |
+          case "${{ github.event.inputs.experiment }}" in
+            pod-kill-go-service)
+              echo "file=chaos/pod-kill-go-service.yaml" >> $GITHUB_OUTPUT
+              echo "label=app.kubernetes.io/name=go-service" >> $GITHUB_OUTPUT
+              ;;
+            pod-kill-node-service)
+              echo "file=chaos/pod-kill-node-service.yaml" >> $GITHUB_OUTPUT
+              echo "label=app.kubernetes.io/name=node-service" >> $GITHUB_OUTPUT
+              ;;
+            pod-kill-frontend)
+              echo "file=chaos/pod-kill-frontend.yaml" >> $GITHUB_OUTPUT
+              echo "label=app.kubernetes.io/name=frontend" >> $GITHUB_OUTPUT
+              ;;
+            network-latency)
+              echo "file=chaos/network-latency.yaml" >> $GITHUB_OUTPUT
+              echo "label=app.kubernetes.io/name in (go-service,node-service,frontend)" >> $GITHUB_OUTPUT
+              ;;
+            cpu-stress)
+              echo "file=chaos/cpu-stress.yaml" >> $GITHUB_OUTPUT
+              echo "label=app.kubernetes.io/name in (go-service,node-service,frontend)" >> $GITHUB_OUTPUT
+              ;;
+            all)
+              echo "file=all" >> $GITHUB_OUTPUT
+              ;;
+            *)
+              echo "file=chaos/pod-kill-go-service.yaml" >> $GITHUB_OUTPUT
+              echo "label=app.kubernetes.io/name=go-service" >> $GITHUB_OUTPUT
+              ;;
+          esac
+
+      - name: Verify steady state
+        if: github.event.inputs.steady_state_check == 'true'
+        run: |
+          echo "Verifying steady state before experiment..."
+          NAMESPACE="${{ github.event.inputs.environment }}"
+          LABEL="${{ steps.experiment-vars.outputs.label }}"
+
+          # Check all pods are ready
+          NOT_READY=$(kubectl get pods -n $NAMESPACE -l "$LABEL" -o jsonpath='{.items[?(@.status.conditions[?(@.type=="Ready")].status!="True")].metadata.name}')
+          if [ -n "$NOT_READY" ]; then
+            echo "::error::Not all pods ready: $NOT_READY"
+            exit 1
+          fi
+          echo "All pods ready"
+
+          # Check HPA status (if exists)
+          HPAS=$(kubectl get hpa -n $NAMESPACE -l "$LABEL" -o jsonpath='{.items[*].metadata.name}' 2>/dev/null || echo "")
+          if [ -n "$HPAS" ]; then
+            for HPA in $HPAS; do
+              kubectl get hpa $HPA -n $NAMESPACE
+            done
+          fi
+
+      - name: Run chaos experiment
+        env:
+          EXPERIMENT_FILE: ${{ steps.experiment-vars.outputs.file }}
+          DURATION: ${{ github.event.inputs.duration }}
+          NAMESPACE: ${{ github.event.inputs.environment }}
+        run: |
+          if [ "$EXPERIMENT_FILE" = "all" ]; then
+            for exp in chaos/*.yaml; do
+              echo "Running experiment: $exp"
+              # Update namespace and duration
+              sed -i "s/appns: \"staging\"/appns: \"$NAMESPACE\"/g" "$exp"
+              sed -i "s/TOTAL_CHAOS_DURATION.*value: \".*\"/TOTAL_CHAOS_DURATION\" value: \"$DURATION\"/g" "$exp"
+              kubectl apply -f "$exp"
+              sleep 5
+            done
+          else
+            # Update namespace and duration in the experiment file
+            sed -i "s/appns: \"staging\"/appns: \"$NAMESPACE\"/g" "$EXPERIMENT_FILE"
+            sed -i "s/TOTAL_CHAOS_DURATION.*value: \".*\"/TOTAL_CHAOS_DURATION\" value: \"$DURATION\"/g" "$EXPERIMENT_FILE"
+            kubectl apply -f "$EXPERIMENT_FILE"
+          fi
+
+      - name: Wait for experiment completion
+        env:
+          EXPERIMENT_FILE: ${{ steps.experiment-vars.outputs.file }}
+          NAMESPACE: ${{ github.event.inputs.environment }}
+        run: |
+          if [ "$EXPERIMENT_FILE" = "all" ]; then
+            echo "Waiting for all experiments to complete..."
+            sleep $(($DURATION + 30))
+          else
+            # Extract ChaosEngine name from file
+            ENGINE_NAME=$(grep "name:" "$EXPERIMENT_FILE" | head -1 | awk '{print $2}')
+            echo "Waiting for ChaosEngine: $ENGINE_NAME"
+            kubectl wait --for=condition=completed chaosengine/$ENGINE_NAME -n litmus --timeout=300s || true
+          fi
+
+      - name: Collect results
+        run: |
+          echo "Collecting chaos experiment results..."
+          kubectl get chaosresults -n litmus -o yaml > chaos-results.yaml || true
+          kubectl get chaosengines -n litmus -o yaml > chaos-engines.yaml || true
+
+          # Print summary
+          echo "=== Chaos Results ==="
+          kubectl get chaosresults -n litmus -o custom-columns=NAME:.metadata.name,ENGINE:.spec.engine,VERDICT:.status.experimentStatus.verdict,PHASE:.status.phase 2>/dev/null || echo "No results yet"
+
+      - name: Verify post-experiment state
+        run: |
+          echo "Verifying post-experiment state..."
+          NAMESPACE="${{ github.event.inputs.environment }}"
+          LABEL="${{ steps.experiment-vars.outputs.label }}"
+
+          # Check all pods are ready again
+          sleep 10
+          NOT_READY=$(kubectl get pods -n $NAMESPACE -l "$LABEL" -o jsonpath='{.items[?(@.status.conditions[?(@.type=="Ready")].status!="True")].metadata.name}')
+          if [ -n "$NOT_READY" ]; then
+            echo "::warning::Some pods not ready after experiment: $NOT_READY"
+          else
+            echo "All pods recovered successfully"
+          fi
+
+          # Check ArgoCD application sync status
+          APPS=$(kubectl get applications -n argocd -l "app.kubernetes.io/part-of=platform-services" -o jsonpath='{.items[*].metadata.name}' 2>/dev/null || echo "")
+          for APP in $APPS; do
+            SYNC=$(kubectl get application $APP -n argocd -o jsonpath='{.status.sync.status}')
+            HEALTH=$(kubectl get application $APP -n argocd -o jsonpath='{.status.health.status}')
+            echo "ArgoCD App $APP: Sync=$SYNC, Health=$HEALTH"
+          done
+
+      - name: Upload results artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: chaos-results-${{ github.event.inputs.experiment }}-${{ github.event.inputs.environment }}
+          path: |
+            chaos-results.yaml
+            chaos-engines.yaml
+          retention-days: 30
+
+      - name: Post results to GitHub Step Summary
+        run: |
+          echo "# Chaos Experiment Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Experiment:** ${{ github.event.inputs.experiment }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** ${{ github.event.inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Duration:** ${{ github.event.inputs.duration }}s" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -f chaos-results.yaml ]; then
+            echo "## Results" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            yq eval '.items[] | {name: .metadata.name, engine: .spec.engine, verdict: .status.experimentStatus.verdict, phase: .status.phase}' chaos-results.yaml 2>/dev/null | while read -r line; do
+              echo "- $line" >> $GITHUB_STEP_SUMMARY
+            done
+          fi
+
+      - name: Notify Slack (if configured)
+        if: env.SLACK_WEBHOOK_URL != ''
+        run: |
+          curl -X POST -H 'Content-type: application/json' \
+            --data "{\"text\":\"🧪 Chaos experiment ${{ github.event.inputs.experiment }} completed in ${{ github.event.inputs.environment }}\nDuration: ${{ github.event.inputs.duration }}s\"}" \
+            ${{ env.SLACK_WEBHOOK_URL }}

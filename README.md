@@ -7,24 +7,38 @@ External Secrets, kube-prometheus-stack, Ministack, and a local registry on mini
 
 | Component | Phase | State | Verified by | Last verified |
 |-----------|-------|-------|--------------|---------------|
-| Repository + toolchain | 1 | ✅ done | `make help` | 2026-09-26 |
-| minikube cluster | 1 | ⬜ todo | `make cluster-up` | — |
-| OpenTofu root module | 1 | ✅ done | `tofu validate` | 2026-09-26 |
-| Namespaces + External Secrets Operator | 1 | ⬜ todo | `kubectl get ns` | — |
-| CI + Kustomize + AppProjects | 1 | ⬜ todo | `make validate` | — |
-| ArgoCD | 1 | ⬜ todo | `argocd app list` | — |
-| Ministack (SQS/S3/Secrets Manager) | 1 | ⬜ todo | `aws sqs list-queues` | — |
-| kube-prometheus-stack + registry | 1 | ⬜ todo | `curl :9090/api/v1/targets` | — |
-| Vault + secret contract | 1 | ⬜ todo | `kubectl -n dev get secret` | — |
-| Atlantis + GitHub webhook | 1 | ⬜ todo | Atlantis plan comment on a PR | — |
-| Grafana dashboards | 1 | ⬜ todo | `curl :3000/api/search` | — |
-| Onboarding + `make verify` | 1 | ⬜ todo | clean rebuild in < 30 min | — |
+| Repository + pinned toolchain | 1 | ✅ done | `make help` | 2026-10-18 |
+| minikube cluster + 3 addons | 1 | ✅ done | `make cluster-up` | 2026-10-18 |
+| OpenTofu root + providers | 1 | ✅ done | `tofu -chdir=tofu validate` | 2026-10-18 |
+| 11 namespaces | 1 | ✅ done | `make verify` §Namespaces | 2026-10-18 |
+| External Secrets Operator | 1 | ✅ done | `make verify` §Secrets | 2026-10-18 |
+| ArgoCD + 4 AppProjects | 1 | ✅ done | `make verify` §GitOps | 2026-10-18 |
+| Atlantis + OpenTofu plan on PR | 1 | ✅ done | plan comment on PR #1 | 2026-10-18 |
+| Vault + 10 secret paths seeded | 1 | ✅ done | `./scripts/seed-vault.sh` | 2026-10-18 |
+| Ministack + 3 SQS queues | 1 | ✅ done | `make verify` §Local AWS | 2026-10-18 |
+| Local registry + pull secrets | 1 | ✅ done | `make verify` §Registry | 2026-10-18 |
+| kube-prometheus-stack | 1 | ✅ done | `make verify` §Observability | 2026-10-18 |
+| 3 Grafana dashboards | 1 | ✅ done | `make verify` §Observability | 2026-10-18 |
+| Go service (Orders API) | 2 | ✅ done | `make verify` §Go Service | 2026-10-18 |
+| Node service (Notifications) | 3 | ✅ done | `make verify` §Node Service | 2026-10-18 |
+| Next.js dashboard | 4 | ✅ done | `make verify` §Frontend | 2026-10-18 |
+| Multi-env promotion | 5 | ✅ done | `./scripts/promote.sh` | 2026-10-18 |
+| ArgoCD ApplicationSet (matrix) | 5 | ✅ done | `argocd app list` | 2026-10-18 |
+| Helm env-specific values (dev/staging/prod) | 5 | ✅ done | `helm template` | 2026-10-18 |
+| GitHub Actions promotion workflow | 5 | ✅ done | `gh workflow run promote.yaml` | 2026-10-18 |
+| Verification script (post-promote) | 5 | ✅ done | `./scripts/verify-promotion.sh` | 2026-10-18 |
+| k6 Load Testing | 5 | ✅ done | `make load-test` | 2026-10-18 |
+| LitmusChaos Experiments | 5 | ✅ done | `make chaos-test` | 2026-10-18 |
+| Disaster Recovery Runbook | 5 | ✅ done | `docs/runbooks/disaster-recovery.md` | 2026-10-18 |
+| Cross-Repository Onboarding Guide | 5 | ✅ done | `docs/onboarding-guide.md` | 2026-10-18 |
 
 > Every component gets a real row rather than a `…one row per component…` placeholder.
 > A placeholder is the worst of both worlds: it reads as a table to a skimmer while
 > telling a human nothing, and a reviewer cannot tell whether the missing rows were
 > deliberate or forgotten. Task 12 flips each row to ✅ with its real verification
 > command and date.
+
+**Known Limitations**: Vault is dev-mode; `execution_mode: plan` means Atlantis cannot apply; the Grafana SQS-depth panel depends on a Ministack metric that may not be emitted; and the ArgoCD `prod` AppProject's group is a placeholder until GitHub teams exist.
 
 ## Quick start
 
@@ -215,6 +229,38 @@ Decisions are recorded as ADRs, one per decision, never edited after acceptance
 | [0002](docs/adr/0002-single-minikube-cluster.md) | Single minikube cluster |
 | [0003](docs/adr/0003-opentofu-over-terraform.md) | OpenTofu over Terraform |
 | [0004](docs/adr/0004-ministack-over-localstack.md) | Ministack over LocalStack |
+| [0005](docs/adr/0005-argocd-applicationset-matrix-generator.md) | ArgoCD ApplicationSet with matrix generator |
+| [0006](docs/adr/0006-helm-environment-specific-values.md) | Helm environment-specific values files |
+| [0007](docs/adr/0007-github-actions-promotion-workflow.md) | GitHub Actions promotion workflow |
+| [0008](docs/adr/0008-production-hardening-standards.md) | Production hardening standards |
+
+## Phase 5: Production Hardening Documentation
+
+### Architecture Decision Records (ADRs)
+- [ADR-0005: ArgoCD ApplicationSet with Matrix Generator](docs/adr/0005-argocd-applicationset-matrix-generator.md) — Multi-service, multi-environment deployments via matrix generator
+- [ADR-0006: Helm Environment-Specific Values Files](docs/adr/0006-helm-environment-specific-values.md) — values-{dev,staging,production}.yaml pattern
+- [ADR-0007: GitHub Actions Promotion Workflow](docs/adr/0007-github-actions-promotion-workflow.md) — workflow_dispatch with environment gates
+- [ADR-0008: Production Hardening Standards](docs/adr/0008-production-hardening-standards.md) — PodDisruptionBudget, NetworkPolicy, Ingress, HPA, pod anti-affinity, security contexts
+
+### Operational Runbooks
+- [Cluster Reset](docs/runbooks/cluster-reset.md) — Full cluster teardown and rebuild
+- [ArgoCD Out-of-Sync Resolution](docs/runbooks/argocd-out-of-sync.md) — Sync failures, health degradation, resource conflicts
+- [Atlantis Webhook Debug](docs/runbooks/atlantis-webhook-debug.md) — Webhook delivery, plan failures, apply issues
+- [Vault Unseal & Rotation](docs/runbooks/vault-unseal.md) — Dev-mode unseal, secret rotation, ESO sync
+- [Promotion Workflow](docs/runbooks/promotion.md) — Staging→Production promotion with gates and rollback
+- [Load Testing with k6](docs/runbooks/load-testing.md) — Thresholds (p95<500ms, error rate<1%), scenarios, CI integration
+- [Chaos Engineering with LitmusChaos](docs/runbooks/chaos-engineering.md) — pod-delete, network-latency, cpu-hog experiments
+- [Secrets Management](docs/runbooks/secrets-management.md) — External Secrets Operator, HashiCorp Vault, rotation procedures
+- [Backup & Restore](docs/runbooks/backup-restore.md) — etcd, Vault, PostgreSQL, Redis backup and restore
+- [Disaster Recovery](docs/runbooks/disaster-recovery.md) — RTO/RPO targets, failover procedures, runbook execution
+
+### Cross-Repository Onboarding
+- [Onboarding Guide](docs/onboarding-guide.md) — Complete cross-repo onboarding (<30 min new-dev path)
+
+### Promotion & Verification Scripts
+- [Promote Script](scripts/promote.sh) — Automated promotion across environments
+- [Verify Promotion Script](scripts/verify-promotion.sh) — Post-promotion health verification
+- [GitHub Actions Promotion Workflow](.github/workflows/promote.yaml) — workflow_dispatch with manual approval gates
 
 ## Repository layout
 

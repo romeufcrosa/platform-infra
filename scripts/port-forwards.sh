@@ -61,7 +61,7 @@ FORWARDS=(
   # forwarding to `vault-internal` resolves to no cluster IP, because that
   # Service is headless (kubectl reports `ClusterIP: None`).
   "vault/vault                        8200:8200  vault"       # Task 9
-  # "atlantis/atlantis                8080:8080  atlantis"    # Task 10
+  "atlantis/atlantis                8080:8080  atlantis"    # Task 10
 )
 
 # Anchored column test, not substring. `minikube addons list`-style tabular
