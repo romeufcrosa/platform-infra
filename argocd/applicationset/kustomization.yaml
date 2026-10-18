@@ -1,0 +1,8 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Note: ApplicationSet contains Go templates which are processed by ArgoCD's
+# ApplicationSet controller at runtime, not by kustomize. This kustomization
+# is for reference; apply the ApplicationSet directly with kubectl.
+resources:
+  - services-applicationset.yaml
