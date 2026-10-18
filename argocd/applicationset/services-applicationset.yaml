@@ -1,0 +1,74 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: platform-services
+  namespace: argocd
+spec:
+  generators:
+    - matrix:
+        generators:
+          # Services generator
+          - list:
+              elements:
+                - service: go-service
+                  repoURL: https://github.com/romeufcrosa/platform-services-go.git
+                  path: helm/go-service
+                - service: node-service
+                  repoURL: https://github.com/romeufcrosa/platform-services-node.git
+                  path: helm/node-service
+                - service: frontend
+                  repoURL: https://github.com/romeufcrosa/platform-frontend.git
+                  path: helm/frontend
+          # Environments generator - includes project mapping per service and syncPolicy
+          - list:
+              elements:
+                - environment: dev
+                  syncPolicy: automated
+                  projects:
+                    go-service: dev
+                    node-service: node-services
+                    frontend: dev
+                - environment: staging
+                  syncPolicy: manual
+                  projects:
+                    go-service: staging
+                    node-service: staging
+                    frontend: staging
+                - environment: prod
+                  syncPolicy: manual
+                  projects:
+                    go-service: prod
+                    node-service: prod
+                    frontend: prod
+  template:
+    metadata:
+      name: '{{.service}}-{{.environment}}'
+      namespace: argocd
+      labels:
+        app.kubernetes.io/part-of: platform-services
+        app.kubernetes.io/managed-by: argocd
+        service: '{{.service}}'
+        environment: '{{.environment}}'
+    spec:
+      project: '{{index .projects .service}}'
+      source:
+        repoURL: '{{.repoURL}}'
+        targetRevision: main
+        path: '{{.path}}'
+        helm:
+          valueFiles:
+            - values.yaml
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: '{{.environment}}'
+      syncPolicy:
+        {{- if eq .syncPolicy "automated" }}
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+        {{- else }}
+        syncOptions:
+          - CreateNamespace=true
+        {{- end }}
