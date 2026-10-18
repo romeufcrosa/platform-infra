@@ -1,0 +1,179 @@
+# Staging environment values override for platform-infra
+# This file contains global/platform-level configuration for staging
+
+# Global image tag for staging
+global:
+  imageTag: "staging"
+  environment: "staging"
+
+# ArgoCD staging configuration
+argocd:
+  server:
+    replicas: 2
+    autoscaling:
+      enabled: true
+      minReplicas: 2
+      maxReplicas: 5
+      targetCPUUtilizationPercentage: 70
+    resources:
+      limits:
+        cpu: 500m
+        memory: 1Gi
+      requests:
+        cpu: 250m
+        memory: 512Mi
+    ingress:
+      enabled: true
+      className: "nginx"
+      annotations:
+        cert-manager.io/cluster-issuer: "letsencrypt-staging"
+        nginx.ingress.kubernetes.io/ssl-redirect: "true"
+      hosts:
+        - argocd.staging.example.com
+      tls:
+        - secretName: argocd-staging-tls
+          hosts:
+            - argocd.staging.example.com
+
+  applicationSet:
+    enabled: true
+
+  dex:
+    enabled: false
+
+  notifications:
+    enabled: false
+
+  configs:
+    cm:
+      application.resourceTrackingMethod: annotation
+
+# Prometheus/Grafana staging configuration
+prometheus:
+  fullnameOverride: prometheus
+  alertmanager:
+    enabled: true
+    alertmanagerSpec:
+      replicas: 2
+    config:
+      route:
+        receiver: "null"
+        group_by:
+          - alertname
+          - namespace
+      receivers:
+        - name: "null"
+  grafana:
+    enabled: true
+    adminUser: admin
+    adminPassword: ""
+    fullnameOverride: grafana
+    persistence:
+      enabled: false
+    serviceMonitor:
+      enabled: true
+    sidecar:
+      datasources:
+        enabled: true
+        defaultDatasourceEnabled: false
+  prometheus:
+    prometheusSpec:
+      retentionSize: 10GB
+      resources:
+        requests:
+          cpu: 500m
+          memory: 2Gi
+        limits:
+          memory: 4Gi
+      serviceMonitorSelectorNilUsesHelmValues: false
+      podMonitorSelectorNilUsesHelmValues: false
+      ruleSelectorNilUsesHelmValues: false
+      serviceMonitorSelector: {}
+      podMonitorSelector: {}
+      serviceMonitorNamespaceSelector: {}
+    serviceMonitor:
+      selfMonitor: true
+  kubeStateMetrics:
+    enabled: true
+  nodeExporter:
+    enabled: true
+
+# Default rules for staging
+defaultRules:
+  create: true
+  rules:
+    etcd: false
+    kubeSchedulerAlerting: false
+    kubeSchedulerRecording: false
+    kubeControllerManager: false
+
+# Vault staging configuration
+vault:
+  server:
+    replicas: 2
+    resources:
+      limits:
+        cpu: 500m
+        memory: 1Gi
+      requests:
+        cpu: 250m
+        memory: 512Mi
+    ha:
+      enabled: true
+      replicas: 2
+    ingress:
+      enabled: true
+      className: "nginx"
+      annotations:
+        cert-manager.io/cluster-issuer: "letsencrypt-staging"
+        nginx.ingress.kubernetes.io/ssl-redirect: "true"
+      hosts:
+        - vault.staging.example.com
+      tls:
+        - secretName: vault-staging-tls
+          hosts:
+            - vault.staging.example.com
+
+# Atlantis staging configuration
+atlantis:
+  replicas: 2
+  resources:
+    limits:
+      cpu: 500m
+      memory: 1Gi
+    requests:
+      cpu: 250m
+      memory: 512Mi
+  ingress:
+    enabled: true
+    className: "nginx"
+    annotations:
+      cert-manager.io/cluster-issuer: "letsencrypt-staging"
+      nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    hosts:
+      - atlantis.staging.example.com
+    tls:
+      - secretName: atlantis-staging-tls
+        hosts:
+          - atlantis.staging.example.com
+
+# PostgreSQL staging configuration
+postgresql:
+  primary:
+    resources:
+      limits:
+        cpu: 1000m
+        memory: 2Gi
+      requests:
+        cpu: 500m
+        memory: 1Gi
+    persistence:
+      size: 20Gi
+  pgbouncer:
+    resources:
+      limits:
+        cpu: 200m
+        memory: 256Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi
