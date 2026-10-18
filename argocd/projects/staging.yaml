@@ -8,13 +8,53 @@ metadata:
 spec:
   description: Staging environment - manual promotion
   sourceRepos:
-    - '*'
+    - https://github.com/romeufcrosa/platform-infra.git
+    - https://github.com/romeufcrosa/platform-services-go.git
+    - https://github.com/romeufcrosa/platform-services-node.git
+    - https://github.com/romeufcrosa/platform-frontend.git
   destinations:
     - namespace: 'staging'
       server: '*'
+    - namespace: 'monitoring'
+      server: '*'
   clusterResourceWhitelist:
-    - group: '*'
-      kind: '*'
+    - group: 'argoproj.io'
+      kind: 'Application'
+    - group: 'argoproj.io'
+      kind: 'ApplicationSet'
+    - group: 'cert-manager.io'
+      kind: 'ClusterIssuer'
+    - group: 'external-secrets.io'
+      kind: 'ClusterSecretStore'
+    - group: 'monitoring.coreos.com'
+      kind: 'Prometheus'
+    - group: 'monitoring.coreos.com'
+      kind: 'PrometheusRule'
+    - group: 'monitoring.coreos.com'
+      kind: 'ServiceMonitor'
+    - group: 'grafana.integreatly.org'
+      kind: 'GrafanaDashboard'
+    - group: 'grafana.integreatly.org'
+      kind: 'GrafanaDataSource'
   namespaceResourceWhitelist:
     - group: '*'
       kind: '*'
+  roles:
+    - name: admin
+      description: Platform team full access to staging
+      policies:
+        - p, proj:staging:admin, applications, *, staging/*, allow
+        - p, proj:staging:admin, repositories, *, *, allow
+        - p, proj:staging:admin, clusters, *, *, allow
+        - p, proj:staging:admin, projects, *, *, allow
+      groups:
+        - platform-team
+    - name: read-only
+      description: Developers read-only access to staging
+      policies:
+        - p, proj:staging:read-only, applications, get, staging/*, allow
+        - p, proj:staging:read-only, applications, list, staging/*, allow
+        - p, proj:staging:read-only, repositories, get, *, allow
+        - p, proj:staging:read-only, clusters, get, *, allow
+      groups:
+        - developers

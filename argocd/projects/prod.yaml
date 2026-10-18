@@ -8,32 +8,52 @@ metadata:
 spec:
   description: Production environment - protected, manual promotion
   sourceRepos:
-    - '*'
+    - https://github.com/romeufcrosa/platform-infra.git
+    - https://github.com/romeufcrosa/platform-services-go.git
+    - https://github.com/romeufcrosa/platform-services-node.git
+    - https://github.com/romeufcrosa/platform-frontend.git
   destinations:
     - namespace: 'prod'
       server: '*'
   clusterResourceWhitelist:
-    - group: '*'
-      kind: '*'
+    - group: 'argoproj.io'
+      kind: 'Application'
+    - group: 'argoproj.io'
+      kind: 'ApplicationSet'
+    - group: 'cert-manager.io'
+      kind: 'ClusterIssuer'
+    - group: 'external-secrets.io'
+      kind: 'ClusterSecretStore'
   namespaceResourceWhitelist:
     - group: '*'
       kind: '*'
-  # Production is protected: only these roles may sync, and roles are bound
-  # to the platform team rather than to all authenticated users.
-  #
-  # ArgoCD RBAC policies are evaluated in order and the LAST match wins, so the
-  # catch-all `deny` has to stay last. Moving it above the two `allow` lines
-  # would deny everyone, including the platform team, and the failure would be
-  # silent — a sync that simply never appears.
   roles:
-    - name: platform-team
-      description: Platform team members may sync production
+    - name: admin
+      description: Platform leads full access to production
       policies:
-        - p, proj:prod:devops, sync, prod/*, allow
-        - p, proj:prod:platform-team, sync, prod/*, allow
-        - p, proj:prod:*, sync, prod/*, deny
+        - p, proj:prod:admin, applications, *, prod/*, allow
+        - p, proj:prod:admin, repositories, *, *, allow
+        - p, proj:prod:admin, clusters, *, *, allow
+        - p, proj:prod:admin, projects, *, *, allow
       groups:
-        # The OIDC group name that carries these roles. Task 12 creates the
-        # GitHub teams; until then this is a name ArgoCD will never match,
-        # which fails closed (nobody can sync prod) rather than open.
+        - platform-leads
+    - name: read-only
+      description: Platform team read-only access to production
+      policies:
+        - p, proj:prod:read-only, applications, get, prod/*, allow
+        - p, proj:prod:read-only, applications, list, prod/*, allow
+        - p, proj:prod:read-only, repositories, get, *, allow
+        - p, proj:prod:read-only, clusters, get, *, allow
+      groups:
         - platform-team
+  syncWindows:
+    - kind: allow
+      schedule: '0 2 * * 0'  # Weekly Sunday 02:00 UTC
+      duration: 4h
+      applications:
+        - '*'
+    - kind: deny
+      schedule: '0 6 * * 0'  # Weekly Sunday 06:00 UTC (end of window)
+      duration: 164h
+      applications:
+        - '*'
