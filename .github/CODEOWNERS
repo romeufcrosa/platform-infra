@@ -2,7 +2,7 @@
 # docs contracts because the dashboards are consumed by the platform team.
 #
 # These are individual handles, deliberately: the GitHub team slugs do not
-# exist until Task 12 creates them, and a placeholder-shaped `@your-org/...`
+# exist until Task 12 creates them, and a placeholder-shaped `@romeufcrosa/...`
 # is a valid-looking line that routes every review to nobody. Task 12 replaces
 # each handle with the corresponding team slug in the same commit that creates
 # the team.

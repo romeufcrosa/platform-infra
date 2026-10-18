@@ -1,0 +1,28 @@
+version: 3
+
+# Local profile: auto-merge is safe because nothing Atlantis manages is
+# real. Flip automerge to false before pointing this at anything else.
+automerge: true
+abortOnExecutionOrderFail: true
+parallel_plan: true
+parallel_apply: false
+hide_prev_plan_comments: true
+delete_source_branch_on_merge: true
+repo_locks:
+  mode: on_plan
+
+allow_custom_workflows: false
+
+projects:
+  # Rendered from var.atlantis_repo, so the repo identity lives in exactly one
+  # place. A literal here would be correct on the machine that committed it and
+  # wrong on every other machine, and the failure is not an error: Atlantis
+  # simply locks a repository nobody has, reports success, and plans nothing.
+  - name: ${atlantis_repo}
+    dir: tofu
+    workspace: default
+    execution_mode: plan   # the Phase 1 contract: humans apply, Atlantis plans.
+                           # Flip to 'apply' only after the plan output has
+                           # been reviewed a few times.
+    terraform_version: "1.7.0"   # OpenTofu
+    apply_requirements: [approved, mergeable, undiverged]

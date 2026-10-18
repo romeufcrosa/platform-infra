@@ -1,0 +1,21 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: frontend-staging
+  namespace: argocd
+spec:
+  project: staging
+  source:
+    repoURL: https://github.com/romeufcrosa/platform-frontend.git
+    targetRevision: main
+    path: helm/frontend
+    helm:
+      valueFiles:
+        - values-staging.yaml
+        - values.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: staging
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
