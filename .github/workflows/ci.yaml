@@ -113,7 +113,7 @@ jobs:
       # The tag is v0.28.0. The bare `0.28.0` in the Task 5 brief is not a tag
       # in this repository (GitHub API 404); the release list carries a `v`
       # prefix for 0.28.0. Verified 2026-09-27.
-      - uses: aquasecurity/trivy-action@v0.24.0
+      - uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: config
           scan-ref: .
