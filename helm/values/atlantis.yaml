@@ -48,8 +48,8 @@ repoConfig: ""
 # chart from a Kubernetes Secret, so the module sets `vcsSecretName` and the
 # PAT never enters a values file or, more importantly, the Helm release's own
 # stored values (which are plaintext base64 in the namespace).
-github:
-  user: git
+# For CI validation, we omit github config since token is secret.
+# In production, the module injects vcsSecretName via terraform.
 
 # OpenTofu, not Terraform. This is the single most important value in the file
 # for this project: the chart defaults to `terraform`, so an Atlantis that
