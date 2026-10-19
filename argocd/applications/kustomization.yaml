@@ -15,4 +15,3 @@ resources:
   - go-service-prod.yaml
   - node-service-prod.yaml
   - frontend-prod.yaml
-  - ../applicationset/services-applicationset.yaml
