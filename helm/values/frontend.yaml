@@ -1,3 +1,4 @@
+---
 # Overrides for the frontend Helm chart in the dev namespace
 image:
   tag: "dev"  # will be updated by CI via update-infra target
