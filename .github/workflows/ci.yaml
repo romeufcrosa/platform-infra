@@ -19,7 +19,7 @@ jobs:
     name: Validate IaC and manifests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install OpenTofu
         uses: opentofu/setup-opentofu@v1
@@ -53,7 +53,7 @@ jobs:
     name: Validate Helm values
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: azure/setup-helm@v4
         with:
           version: v3.15.3
@@ -110,7 +110,7 @@ jobs:
       contents: read
       security-events: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # The tag is v0.28.0. The bare `0.28.0` in the Task 5 brief is not a tag
       # in this repository (GitHub API 404); the release list carries a `v`
       # prefix for 0.28.0. Verified 2026-09-27.

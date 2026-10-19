@@ -46,7 +46,7 @@ jobs:
       K6_API_TOKEN: ${{ secrets.K6_API_TOKEN }}
     steps:
       - name: Checkout platform-infra
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: romeufcrosa/platform-infra
           token: ${{ secrets.GITHUB_TOKEN }}
