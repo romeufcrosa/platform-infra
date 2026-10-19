@@ -1,3 +1,4 @@
+---
 # The container registry has no Helm chart in this project. Its manifest
 # mirrors the `kubernetes_deployment` / `kubernetes_service` in
 # tofu/modules/registry/main.tf, which is what actually creates them in Phase 1.

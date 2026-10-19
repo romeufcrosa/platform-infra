@@ -1,3 +1,4 @@
+---
 # Values for argo/argo-cd 6.7.x (ArgoCD 2.10). Every image tag is pinned;
 # the chart's own default is a moving target.
 #
