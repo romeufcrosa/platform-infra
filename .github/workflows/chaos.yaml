@@ -43,7 +43,7 @@ jobs:
     environment: ${{ github.event.inputs.environment }}
     steps:
       - name: Checkout platform-infra
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: romeufcrosa/platform-infra
           token: ${{ secrets.GITHUB_TOKEN }}

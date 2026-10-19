@@ -41,7 +41,7 @@ jobs:
       services: ${{ steps.set-output.outputs.services }}
     steps:
       - name: Checkout platform-infra
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: romeufcrosa/platform-infra
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -87,7 +87,7 @@ jobs:
     environment: ${{ github.event.inputs.environment }}
     steps:
       - name: Checkout platform-infra
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: romeufcrosa/platform-infra
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -121,7 +121,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout platform-infra
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: romeufcrosa/platform-infra
           token: ${{ secrets.GITHUB_TOKEN }}
