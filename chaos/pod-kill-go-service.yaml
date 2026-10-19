@@ -1,3 +1,4 @@
+---
 apiVersion: litmuschaos.io/v1alpha1
 kind: ChaosEngine
 metadata:
@@ -84,7 +85,9 @@ spec:
           sleep $CHAOS_INTERVAL
 
           # Verify recovery
-          READY=$(kubectl get pods -n $TARGET_NAMESPACE -l $LABEL_SELECTOR -o jsonpath='{.items[*].status.conditions[?(@.type=="Ready")].status}' | grep -c True || echo 0)
+          READY=$(kubectl get pods -n "$TARGET_NAMESPACE" -l "$LABEL_SELECTOR" \
+            -o jsonpath='{.items[*].status.conditions[?(@.type=="Ready")].status}' \
+            | grep -c True || echo 0)
           if [ $READY -eq $POD_COUNT ]; then
             echo "All pods recovered successfully"
           else

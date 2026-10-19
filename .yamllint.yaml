@@ -11,3 +11,6 @@ rules:
     min-spaces-from-content: 1
   document-start:
     present: true
+
+ignore: |
+  kubernetes/platform-system/platform/dashboards-configmap.yaml

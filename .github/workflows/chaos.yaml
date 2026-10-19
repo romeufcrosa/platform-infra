@@ -1,3 +1,4 @@
+---
 name: Chaos Engineering
 
 on:
@@ -71,7 +72,9 @@ jobs:
       - name: Create litmus namespace and RBAC
         run: |
           kubectl create namespace litmus --dry-run=client -o yaml | kubectl apply -f -
-          kubectl apply -f chaos/pod-kill-go-service.yaml --selector=rbac.authorization.k8s.io/v1=ClusterRole --dry-run=client -o yaml | kubectl apply -f - || true
+          kubectl apply -f chaos/pod-kill-go-service.yaml \
+            --selector=rbac.authorization.k8s.io/v1=ClusterRole \
+            --dry-run=client -o yaml | kubectl apply -f - || true
 
       - name: Set experiment variables
         id: experiment-vars
@@ -114,7 +117,8 @@ jobs:
           LABEL="${{ steps.experiment-vars.outputs.label }}"
 
           # Check all pods are ready
-          NOT_READY=$(kubectl get pods -n $NAMESPACE -l "$LABEL" -o jsonpath='{.items[?(@.status.conditions[?(@.type=="Ready")].status!="True")].metadata.name}')
+          NOT_READY=$(kubectl get pods -n "$NAMESPACE" -l "$LABEL" \
+            -o jsonpath='{.items[?(@.status.conditions[?(@.type=="Ready")].status!="True")].metadata.name}')
           if [ -n "$NOT_READY" ]; then
             echo "::error::Not all pods ready: $NOT_READY"
             exit 1
@@ -122,7 +126,8 @@ jobs:
           echo "All pods ready"
 
           # Check HPA status (if exists)
-          HPAS=$(kubectl get hpa -n $NAMESPACE -l "$LABEL" -o jsonpath='{.items[*].metadata.name}' 2>/dev/null || echo "")
+          HPAS=$(kubectl get hpa -n "$NAMESPACE" -l "$LABEL" \
+            -o jsonpath='{.items[*].metadata.name}' 2>/dev/null || echo "")
           if [ -n "$HPAS" ]; then
             for HPA in $HPAS; do
               kubectl get hpa $HPA -n $NAMESPACE
@@ -174,7 +179,10 @@ jobs:
 
           # Print summary
           echo "=== Chaos Results ==="
-          kubectl get chaosresults -n litmus -o custom-columns=NAME:.metadata.name,ENGINE:.spec.engine,VERDICT:.status.experimentStatus.verdict,PHASE:.status.phase 2>/dev/null || echo "No results yet"
+          kubectl get chaosresults -n litmus \
+            -o custom-columns=NAME:.metadata.name,ENGINE:.spec.engine,\
+            VERDICT:.status.experimentStatus.verdict,PHASE:.status.phase \
+            2>/dev/null || echo "No results yet"
 
       - name: Verify post-experiment state
         run: |
@@ -184,7 +192,8 @@ jobs:
 
           # Check all pods are ready again
           sleep 10
-          NOT_READY=$(kubectl get pods -n $NAMESPACE -l "$LABEL" -o jsonpath='{.items[?(@.status.conditions[?(@.type=="Ready")].status!="True")].metadata.name}')
+          NOT_READY=$(kubectl get pods -n "$NAMESPACE" -l "$LABEL" \
+            -o jsonpath='{.items[?(@.status.conditions[?(@.type=="Ready")].status!="True")].metadata.name}')
           if [ -n "$NOT_READY" ]; then
             echo "::warning::Some pods not ready after experiment: $NOT_READY"
           else
@@ -192,7 +201,9 @@ jobs:
           fi
 
           # Check ArgoCD application sync status
-          APPS=$(kubectl get applications -n argocd -l "app.kubernetes.io/part-of=platform-services" -o jsonpath='{.items[*].metadata.name}' 2>/dev/null || echo "")
+          APPS=$(kubectl get applications -n argocd \
+            -l "app.kubernetes.io/part-of=platform-services" \
+            -o jsonpath='{.items[*].metadata.name}' 2>/dev/null || echo "")
           for APP in $APPS; do
             SYNC=$(kubectl get application $APP -n argocd -o jsonpath='{.status.sync.status}')
             HEALTH=$(kubectl get application $APP -n argocd -o jsonpath='{.status.health.status}')
@@ -219,7 +230,9 @@ jobs:
           if [ -f chaos-results.yaml ]; then
             echo "## Results" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-            yq eval '.items[] | {name: .metadata.name, engine: .spec.engine, verdict: .status.experimentStatus.verdict, phase: .status.phase}' chaos-results.yaml 2>/dev/null | while read -r line; do
+            yq eval '.items[] | {name: .metadata.name, engine: .spec.engine, \
+            verdict: .status.experimentStatus.verdict, phase: .status.phase}' \
+            chaos-results.yaml 2>/dev/null | while read -r line; do
               echo "- $line" >> $GITHUB_STEP_SUMMARY
             done
           fi
@@ -228,5 +241,6 @@ jobs:
         if: env.SLACK_WEBHOOK_URL != ''
         run: |
           curl -X POST -H 'Content-type: application/json' \
-            --data "{\"text\":\"🧪 Chaos experiment ${{ github.event.inputs.experiment }} completed in ${{ github.event.inputs.environment }}\nDuration: ${{ github.event.inputs.duration }}s\"}" \
-            ${{ env.SLACK_WEBHOOK_URL }}
+            --data "{\"text\":\"🧪 Chaos experiment ${{ github.event.inputs.experiment }} \
+completed in ${{ github.event.inputs.environment }}\nDuration: ${{ github.event.inputs.duration }}s\"}" \
+            "${{ env.SLACK_WEBHOOK_URL }}"

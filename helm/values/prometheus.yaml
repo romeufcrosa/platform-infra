@@ -1,3 +1,4 @@
+---
 # kube-prometheus-stack 65.5.1 (appVersion v0.77.2), verified 2026-09-30 against
 # `helm pull prometheus-community/kube-prometheus-stack --version 65.5.1 --untar`.
 #
