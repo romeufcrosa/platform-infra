@@ -1,3 +1,4 @@
+---
 # Vault in dev mode for the local profile. Dev mode means: in-memory storage,
 # a fixed root token, auto-unseal, and no persistence. Every one of those is
 # unacceptable in production and acceptable here because the whole cluster

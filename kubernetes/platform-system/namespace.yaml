@@ -1,3 +1,4 @@
+---
 # The three application namespaces. `platform-system` and `external-secrets`
 # are NOT declared here: both are already declared in
 # platform/external-secrets.yaml (Task 4), and a Kustomize base cannot hold the
