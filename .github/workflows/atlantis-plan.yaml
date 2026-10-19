@@ -1,3 +1,4 @@
+---
 name: Atlantis Plan
 
 # PR-only. Pings the in-cluster Atlantis server and records whether a plan was

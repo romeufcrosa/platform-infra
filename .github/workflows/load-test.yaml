@@ -1,3 +1,4 @@
+---
 name: Load Testing
 
 on:
@@ -30,7 +31,10 @@ on:
         description: 'RPS stages as JSON array'
         type: string
         required: false
-        default: '[{"duration": "1m", "target": 5}, {"duration": "2m", "target": 20}, {"duration": "1m", "target": 50}, {"duration": "1m", "target": 20}, {"duration": "30s", "target": 0}]'
+        default: >-
+          [{"duration": "1m", "target": 5}, {"duration": "2m", "target": 20},
+          {"duration": "1m", "target": 50}, {"duration": "1m", "target": 20},
+          {"duration": "30s", "target": 0}]
 
 jobs:
   load-test:
@@ -50,8 +54,12 @@ jobs:
       - name: Install k6
         run: |
           sudo gpg -k
-          sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
-          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
+          sudo gpg --no-default-keyring \
+            --keyring /usr/share/keyrings/k6-archive-keyring.gpg \
+            --keyserver hkp://keyserver.ubuntu.com:80 \
+            --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" \
+            | sudo tee /etc/apt/sources.list.d/k6.list
           sudo apt-get update
           sudo apt-get install -y k6
 
@@ -207,6 +215,10 @@ jobs:
       - name: Notify Slack (if configured)
         if: env.SLACK_WEBHOOK_URL != '' && failure()
         run: |
+          SLACK_MSG="{\"text\":\"❌ Load test failed for ${{ github.event.inputs.test_type || 'combined' }} "
+          SLACK_MSG+="in ${{ github.event.inputs.environment || 'staging' }}\n"
+          SLACK_MSG+="Error Rate: ${{ steps.parse-results.outputs.error_rate }}%\n"
+          SLACK_MSG+="p95 Latency: ${{ steps.parse-results.outputs.p95_latency }}ms\"}"
           curl -X POST -H 'Content-type: application/json' \
-            --data "{\"text\":\"❌ Load test failed for ${{ github.event.inputs.test_type || 'combined' }} in ${{ github.event.inputs.environment || 'staging' }}\nError Rate: ${{ steps.parse-results.outputs.error_rate }}%\np95 Latency: ${{ steps.parse-results.outputs.p95_latency }}ms\"}" \
-            ${{ env.SLACK_WEBHOOK_URL }}
+            --data "$SLACK_MSG" \
+            "${{ env.SLACK_WEBHOOK_URL }}"

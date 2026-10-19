@@ -1,3 +1,4 @@
+---
 # kube-prometheus-stack is installed by the Helm release in
 # tofu/modules/prometheus. It is NOT duplicated here: the chart renders 80
 # objects from 65.5.1 (counted with `helm template ... | grep -c '^kind:'`),
