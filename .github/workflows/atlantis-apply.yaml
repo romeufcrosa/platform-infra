@@ -26,14 +26,14 @@ concurrency:
 jobs:
   apply:
     name: Comment `atlantis apply` on the merged pull request
-    if: ${{ github.event.pull_request.merged == true }}
+    if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     steps:
       - name: Report that the apply hook is not configured yet
-        if: ${{ secrets.ATLANTIS_TOKEN == '' }}
+        if: secrets.ATLANTIS_TOKEN == ''
         run: echo "ATLANTIS_TOKEN is not configured; skipping (see docs/runbooks)."
       - name: Comment the apply command
-        if: ${{ secrets.ATLANTIS_TOKEN != '' }}
+        if: secrets.ATLANTIS_TOKEN != ''
         uses: actions/github-script@v9
         with:
           github-token: ${{ secrets.ATLANTIS_TOKEN }}

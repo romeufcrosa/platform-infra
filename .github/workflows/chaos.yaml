@@ -239,8 +239,12 @@ jobs:
 
       - name: Notify Slack (if configured)
         if: env.SLACK_WEBHOOK_URL != ''
+        env:
+          EXPERIMENT: ${{ github.event.inputs.experiment }}
+          ENVIRONMENT: ${{ github.event.inputs.environment }}
+          DURATION: ${{ github.event.inputs.duration }}
+          SLACK_WEBHOOK_URL: ${{ env.SLACK_WEBHOOK_URL }}
         run: |
           curl -X POST -H 'Content-type: application/json' \
-            --data "{\"text\":\"🧪 Chaos experiment ${{ github.event.inputs.experiment }} \
-completed in ${{ github.event.inputs.environment }}\nDuration: ${{ github.event.inputs.duration }}s\"}" \
-            "${{ env.SLACK_WEBHOOK_URL }}"
+            --data "{\"text\":\"🧪 Chaos experiment $EXPERIMENT completed in $ENVIRONMENT\nDuration: ${DURATION}s\"}" \
+            "$SLACK_WEBHOOK_URL"

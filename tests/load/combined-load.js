@@ -20,7 +20,7 @@ const FRONTEND_URL = __ENV.FRONTEND_URL || 'http://frontend.dev.svc.cluster.loca
 const GO_SERVICE_URL = __ENV.GO_SERVICE_URL || 'http://go-service.dev.svc.cluster.local:8080';
 const NODE_SERVICE_URL = __ENV.NODE_SERVICE_URL || 'http://node-service.dev.svc.cluster.local:3000';
 const NODE_SERVICE_WS_URL = __ENV.NODE_SERVICE_WS_URL || 'ws://node-service.dev.svc.cluster.local:3001';
-const RPS_STAGES = JSON.parse(__ENV.RPS_STAGES || '[{duration: "1m", target: 5}, {duration: "2m", target: 20}, {duration: "1m", target: 50}, {duration: "1m", target: 20}, {duration: "30s", target: 0}]');
+const RPS_STAGES = JSON.parse(__ENV.RPS_STAGES || '[{"duration": "1m", "target": 5}, {"duration": "2m", "target": 20}, {"duration": "1m", "target": 50}, {"duration": "1m", "target": 20}, {"duration": "30s", "target": 0}]');
 
 export const options = {
   stages: RPS_STAGES,

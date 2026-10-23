@@ -17,7 +17,7 @@ const wsMessages = new Counter('ws_messages');
 // Configuration
 const BASE_URL = __ENV.NODE_SERVICE_URL || 'http://node-service.dev.svc.cluster.local:3000';
 const WS_URL = __ENV.NODE_SERVICE_WS_URL || 'ws://node-service.dev.svc.cluster.local:3001';
-const RPS_STAGES = JSON.parse(__ENV.RPS_STAGES || '[{duration: "30s", target: 10}, {duration: "30s", target: 50}, {duration: "30s", target: 100}, {duration: "30s", target: 150}]');
+const RPS_STAGES = JSON.parse(__ENV.RPS_STAGES || '[{"duration": "30s", "target": 10}, {"duration": "30s", "target": 50}, {"duration": "30s", "target": 100}, {"duration": "30s", "target": 150}]');
 
 export const options = {
   stages: RPS_STAGES,

@@ -13,7 +13,7 @@ const orderGetLatency = new Trend('order_get_latency');
 
 // Configuration
 const BASE_URL = __ENV.GO_SERVICE_URL || 'http://go-service.dev.svc.cluster.local:8080';
-const RPS_STAGES = JSON.parse(__ENV.RPS_STAGES || '[{duration: "30s", target: 10}, {duration: "30s", target: 50}, {duration: "30s", target: 100}, {duration: "30s", target: 200}]');
+const RPS_STAGES = JSON.parse(__ENV.RPS_STAGES || '[{"duration": "30s", "target": 10}, {"duration": "30s", "target": 50}, {"duration": "30s", "target": 100}, {"duration": "30s", "target": 200}]');
 
 export const options = {
   stages: RPS_STAGES,

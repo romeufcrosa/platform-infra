@@ -24,10 +24,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Report the pull request to Atlantis
-        if: ${{ secrets.ATLANTIS_URL == '' }}
+        if: secrets.ATLANTIS_URL == ''
         run: echo "ATLANTIS_URL is not configured; skipping (see docs/runbooks)."
       - name: Trigger the plan and record the result
-        if: ${{ secrets.ATLANTIS_URL != '' }}
+        if: secrets.ATLANTIS_URL != ''
         env:
           ATLANTIS_URL: ${{ secrets.ATLANTIS_URL }}
           ATLANTIS_TOKEN: ${{ secrets.ATLANTIS_TOKEN }}
