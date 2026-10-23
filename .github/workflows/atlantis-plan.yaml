@@ -33,8 +33,8 @@ jobs:
           ATLANTIS_URL: ${{ secrets.ATLANTIS_URL }}
           ATLANTIS_TOKEN: ${{ secrets.ATLANTIS_TOKEN }}
           REPO: ${{ github.repository }}
-          PULL_NUMBER: ${{ github.event.pull_request.number }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PULL_NUMBER: ${{ github.event.number }}
+          HEAD_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           curl --fail --silent --show-error \
