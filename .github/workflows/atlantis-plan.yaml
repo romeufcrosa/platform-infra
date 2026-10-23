@@ -15,12 +15,13 @@ permissions:
   contents: read
 
 concurrency:
-  group: atlantis-plan-${{ github.event.pull_request.number }}
+  group: atlantis-plan-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: true
 
 jobs:
   plan:
     name: Request a plan from Atlantis
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - name: Report the pull request to Atlantis

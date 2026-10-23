@@ -20,13 +20,13 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: atlantis-apply-${{ github.event.pull_request.number }}
+  group: atlantis-apply-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: false
 
 jobs:
   apply:
     name: Comment `atlantis apply` on the merged pull request
-    if: github.event.pull_request.merged == true
+    if: github.event_name == 'pull_request' && github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     steps:
       - name: Report that the apply hook is not configured yet
