@@ -3,43 +3,6 @@
 Infrastructure for the platform learning ecosystem: OpenTofu, ArgoCD, Atlantis, Vault,
 External Secrets, kube-prometheus-stack, Ministack, and a local registry on minikube.
 
-## Status
-
-| Component | Phase | State | Verified by | Last verified |
-|-----------|-------|-------|--------------|---------------|
-| Repository + pinned toolchain | 1 | ✅ done | `make help` | 2026-10-18 |
-| minikube cluster + 3 addons | 1 | ✅ done | `make cluster-up` | 2026-10-18 |
-| OpenTofu root + providers | 1 | ✅ done | `tofu -chdir=tofu validate` | 2026-10-18 |
-| 11 namespaces | 1 | ✅ done | `make verify` §Namespaces | 2026-10-18 |
-| External Secrets Operator | 1 | ✅ done | `make verify` §Secrets | 2026-10-18 |
-| ArgoCD + 4 AppProjects | 1 | ✅ done | `make verify` §GitOps | 2026-10-18 |
-| Atlantis + OpenTofu plan on PR | 1 | ✅ done | plan comment on PR #1 | 2026-10-18 |
-| Vault + 10 secret paths seeded | 1 | ✅ done | `./scripts/seed-vault.sh` | 2026-10-18 |
-| Ministack + 3 SQS queues | 1 | ✅ done | `make verify` §Local AWS | 2026-10-18 |
-| Local registry + pull secrets | 1 | ✅ done | `make verify` §Registry | 2026-10-18 |
-| kube-prometheus-stack | 1 | ✅ done | `make verify` §Observability | 2026-10-18 |
-| 3 Grafana dashboards | 1 | ✅ done | `make verify` §Observability | 2026-10-18 |
-| Go service (Orders API) | 2 | ✅ done | `make verify` §Go Service | 2026-10-18 |
-| Node service (Notifications) | 3 | ✅ done | `make verify` §Node Service | 2026-10-18 |
-| Next.js dashboard | 4 | ✅ done | `make verify` §Frontend | 2026-10-18 |
-| Multi-env promotion | 5 | ✅ done | `./scripts/promote.sh` | 2026-10-18 |
-| ArgoCD ApplicationSet (matrix) | 5 | ✅ done | `argocd app list` | 2026-10-18 |
-| Helm env-specific values (dev/staging/prod) | 5 | ✅ done | `helm template` | 2026-10-18 |
-| GitHub Actions promotion workflow | 5 | ✅ done | `gh workflow run promote.yaml` | 2026-10-18 |
-| Verification script (post-promote) | 5 | ✅ done | `./scripts/verify-promotion.sh` | 2026-10-18 |
-| k6 Load Testing | 5 | ✅ done | `make load-test` | 2026-10-18 |
-| LitmusChaos Experiments | 5 | ✅ done | `make chaos-test` | 2026-10-18 |
-| Disaster Recovery Runbook | 5 | ✅ done | `docs/runbooks/disaster-recovery.md` | 2026-10-18 |
-| Cross-Repository Onboarding Guide | 5 | ✅ done | `docs/onboarding-guide.md` | 2026-10-18 |
-
-> Every component gets a real row rather than a `…one row per component…` placeholder.
-> A placeholder is the worst of both worlds: it reads as a table to a skimmer while
-> telling a human nothing, and a reviewer cannot tell whether the missing rows were
-> deliberate or forgotten. Task 12 flips each row to ✅ with its real verification
-> command and date.
-
-**Known Limitations**: Vault is dev-mode; `execution_mode: plan` means Atlantis cannot apply; the Grafana SQS-depth panel depends on a Ministack metric that may not be emitted; and the ArgoCD `prod` AppProject's group is a placeholder until GitHub teams exist.
-
 ## Quick start
 
 ```bash
@@ -94,8 +57,8 @@ component runs `kubectl`/`helm`/`tofu` against kubeconfig context `platform`.
 > `tofu/modules/registry/`** — a Helm-installed registry in the `registry` namespace,
 > with `registry_url` and a pull secret in the platform namespaces as the contract. The
 > minikube addon was always redundant with that design; it is now both redundant and
-> broken. The `registry` namespace is created by OpenTofu in Task 4 and the registry
-> workload arrives in Task 8. **Please do not readd the addon** — it will fail, and the
+> broken. The `registry` namespace is created by OpenTofu in the setup phase and the registry
+> workload arrives in a later phase. **Please do not readd the addon** — it will fail, and the
 > failure is the confusing kind that only surfaces as an unrelated `ImagePullBackOff`.
 
 Each tunable is an environment override, so a machine that needs a different shape does
