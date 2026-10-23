@@ -36,7 +36,7 @@ jobs:
         if: secrets.ATLANTIS_TOKEN != ''
         uses: actions/github-script@v9
         with:
-          github-token: ${{ secrets.ATLANTIS_TOKEN }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             await github.rest.issues.createComment({
               owner: context.repo.owner,
