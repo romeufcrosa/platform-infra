@@ -95,6 +95,20 @@ else
     --insecure-registry="$REGISTRY_ADDR"
 fi
 
+# Wait for API server to be ready before enabling addons
+# This prevents "connection refused" errors when addons try to apply manifests
+log "Waiting for API server to be ready..."
+for i in {1..30}; do
+  if kubectl --context "$PROFILE" get --raw=/readyz >/dev/null 2>&1; then
+    log "API server is ready"
+    break
+  fi
+  if [ $i -eq 30 ]; then
+    die "Timed out waiting for API server to be ready"
+  fi
+  sleep 2
+done
+
 # --- Registry reachability from the NODE (Task 8) ---------------------------
 #
 # Idempotent, and a no-op once done. Skipped before Task 8 deploys the registry

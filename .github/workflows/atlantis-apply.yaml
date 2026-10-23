@@ -32,11 +32,13 @@ jobs:
     if: github.event_name == 'pull_request' && github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     steps:
-      - name: Report that the apply hook is not configured yet
-        if: secrets.ATLANTIS_TOKEN == ''
-        run: echo "ATLANTIS_TOKEN is not configured; skipping (see docs/runbooks)."
+      - name: Check ATLANTIS_TOKEN configuration
+        run: |
+          if [ -z "${{ secrets.ATLANTIS_TOKEN }}" ]; then
+            echo "ATLANTIS_TOKEN is not configured; skipping (see docs/runbooks)."
+            exit 0
+          fi
       - name: Comment the apply command
-        if: secrets.ATLANTIS_TOKEN != ''
         uses: actions/github-script@v9
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
