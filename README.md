@@ -418,3 +418,4 @@ mise exec -- aws --version       # aws-cli/2.17.0
 
 If any of these print something other than the pinned version, the toolchain has drifted —
 fix that before trusting a failure elsewhere.
+<!-- Test PR for workflow fix verification -->
