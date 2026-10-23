@@ -20,7 +20,7 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: atlantis-apply-${{ github.event.number || github.sha }}
+  group: atlantis-apply-${{ github.event_name == 'pull_request' && github.event.number || github.sha }}
   cancel-in-progress: false
 
 jobs:
