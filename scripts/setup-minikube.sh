@@ -215,9 +215,9 @@ for addon in "${ALL_ADDONS[@]}"; do
   # One failing addon must not abort the rest — under `set -e` a hard failure here
   # leaves the remaining addons unasserted, so a re-run after one broken addon
   # silently stops working. Collect failures and report them together at the end.
-  # Use --validate=false to skip openapi validation which fails if API server
-  # aggregation isn't fully ready yet (even though /readyz returns success).
-  if ! minikube addons enable "$addon" -p "$PROFILE" --validate=false >/dev/null; then
+  # The --validate flag doesn't exist in minikube v1.34.0.
+  # By this point the API server is ready (/readyz passed), so validation should work.
+  if ! minikube addons enable "$addon" -p "$PROFILE" >/dev/null; then
     warn "addon '$addon' failed to enable (see above)"
     failed_addons+=("$addon")
   fi
