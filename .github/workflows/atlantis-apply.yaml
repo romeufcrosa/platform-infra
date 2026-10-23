@@ -10,7 +10,6 @@ name: Atlantis Apply
 # a plan on the PR, not an apply; see task-10-brief.md.
 on:
   pull_request:
-    types: [closed]
     branches: [main]
   push:
     branches: [main]

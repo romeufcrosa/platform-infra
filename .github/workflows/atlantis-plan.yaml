@@ -8,7 +8,6 @@ name: Atlantis Plan
 # and must not be indistinguishable from a broken build.
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
     branches: [main]
   push:
     branches: [main]
