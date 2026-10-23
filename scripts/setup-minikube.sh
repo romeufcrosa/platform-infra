@@ -108,6 +108,14 @@ for i in {1..30}; do
   sleep 2
 done
 
+# Minikube enables default addons (storage-provisioner, default-storageclass)
+# during 'minikube start' before the API server is ready, causing them to fail.
+# Disable them now so we can re-enable cleanly with --validate=false.
+log "Resetting default addons that may have failed during startup..."
+for addon in storage-provisioner default-storageclass; do
+  minikube addons disable "$addon" -p "$PROFILE" >/dev/null 2>&1 || true
+done
+
 # --- Registry reachability from the NODE (Task 8) ---------------------------
 #
 # Idempotent, and a no-op once done. Skipped before Task 8 deploys the registry
@@ -199,7 +207,10 @@ else
   fi
 fi
 
-for addon in "${ADDONS[@]}"; do
+# All addons we need: default ones (for ingress) + our explicit ones
+ALL_ADDONS=(storage-provisioner default-storageclass "${ADDONS[@]}")
+
+for addon in "${ALL_ADDONS[@]}"; do
   log "Ensuring addon '$addon' enabled"
   # One failing addon must not abort the rest — under `set -e` a hard failure here
   # leaves the remaining addons unasserted, so a re-run after one broken addon
