@@ -15,7 +15,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: atlantis-plan-${{ github.event.pull_request.number || github.sha }}
+  group: atlantis-plan-${{ github.event.number || github.sha }}
   cancel-in-progress: true
 
 jobs:
