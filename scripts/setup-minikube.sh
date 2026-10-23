@@ -90,7 +90,6 @@ else
     --cpus="$CPUS" \
     --memory="$MEMORY" \
     --disk-size="$DISK" \
-    --addons="${ADDONS[*]}" \
     --embed-certs=true \
     --insecure-registry="$REGISTRY_ADDR"
 fi
