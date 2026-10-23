@@ -23,7 +23,7 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: atlantis-apply-${{ github.sha }}
+  group: atlantis-apply-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
