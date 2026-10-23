@@ -10,6 +10,10 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
     branches: [main]
+  push:
+    branches: [main]
+    # Only trigger on push to main to ensure workflow file is evaluated correctly
+    # The job will skip for push events via the if condition
 
 permissions:
   contents: read

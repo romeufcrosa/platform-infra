@@ -12,6 +12,10 @@ on:
   pull_request:
     types: [closed]
     branches: [main]
+  push:
+    branches: [main]
+    # Only trigger on push to main to ensure workflow file is evaluated correctly
+    # The job will skip for push events via the if condition
 
 permissions:
   # `pull-requests: write` is required to comment on the pull request. It is
