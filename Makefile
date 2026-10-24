@@ -174,13 +174,20 @@ deploy-infra: ## Apply all infrastructure with OpenTofu (ArgoCD, Vault, Ministac
 	tofu -chdir=tofu init -upgrade=false -input=false
 	$(call log_info,"Bootstrapping ArgoCD...")
 	$(MAKE) bootstrap-argocd
+	$(call log_info,"Bootstrapping External Secrets Operator...")
+	$(MAKE) bootstrap-external-secrets
 	$(call log_info,"Applying all infrastructure...")
 	tofu -chdir=tofu apply -auto-approve -input=false
 
 .PHONY: deploy-infra-plan
-deploy-infra-plan: ## Show OpenTofu plan without applying
+deploy-infra-plan: ## Show OpenTofu plan without applying (bootstraps required CRDs first)
 	$(call check_mise)
 	tofu -chdir=tofu init -upgrade=false -input=false
+	$(call log_info,"Bootstrapping ArgoCD...")
+	$(MAKE) bootstrap-argocd
+	$(call log_info,"Bootstrapping External Secrets Operator...")
+	$(MAKE) bootstrap-external-secrets
+	$(call log_info,"Running plan...")
 	tofu -chdir=tofu plan -input=false
 
 .PHONY: deploy-infra-target
@@ -194,6 +201,12 @@ bootstrap-argocd: ## Install ArgoCD chart and CRDs before first full apply
 	$(call check_mise)
 	$(call log_info,"Bootstrapping ArgoCD...")
 	tofu -chdir=tofu apply -auto-approve -input=false -target=module.argocd.helm_release.argocd
+
+.PHONY: bootstrap-external-secrets
+bootstrap-external-secrets: ## Install External Secrets Operator chart and CRDs before first full apply
+	$(call check_mise)
+	$(call log_info,"Bootstrapping External Secrets Operator...")
+	tofu -chdir=tofu apply -auto-approve -input=false -target=module.external_secrets.helm_release.external_secrets
 
 .PHONY: destroy-infra
 destroy-infra: ## Destroy all OpenTofu-managed infrastructure (destructive)

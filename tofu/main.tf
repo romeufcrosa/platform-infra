@@ -291,6 +291,34 @@ module "vault" {
   depends_on = [module.namespaces, module.external_secrets]
 }
 
+# Render the Atlantis repo config from template. The template uses var.atlantis_repo
+# which must be set (empty default would produce an invalid config).
+resource "local_file" "atlantis_repo_config" {
+  filename = "${path.root}/atlantis.yaml"
+  content  = templatefile("${path.root}/../atlantis.yaml.tftpl", {
+    atlantis_repo = var.atlantis_repo
+  })
+}
+
+# Atlantis. Task 10: Terraform PR automation via GitHub webhooks.
+# Depends on Vault because the Atlantis module reads the webhook secret
+# from a Kubernetes Secret that the Vault module creates (in Task 9).
+# The chart uses `defaultTFDistribution: opentofu` and `defaultTFVersion`
+# pinned to the same version as the root's required_providers.
+module "atlantis" {
+  source = "./modules/atlantis"
+
+  namespace               = "atlantis"
+  timeout                 = var.helm_timeout
+  github_pat              = var.github_pat
+  github_user             = "local-dev"
+  values_file             = "../helm/values/atlantis.yaml"
+  repo_config_content     = local_file.atlantis_repo_config.content
+  namespace_dependency    = module.namespaces
+
+  depends_on = [module.vault, local_file.atlantis_repo_config]
+}
+
 #   8. postgresql        (Task 2 - Phase 2)
 
 

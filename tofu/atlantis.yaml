@@ -1,0 +1,13 @@
+# Server-side repo config for Atlantis. This is rendered as repos.yaml and
+# mounted at /etc/atlantis/repos.yaml. The legacy 'repos' format is used.
+# See: https://www.runatlantis.io/docs/server-side-repo-config.html
+
+repos:
+  # Rendered from var.atlantis_repo, so the repo identity lives in exactly one
+  # place. A literal here would be correct on the machine that committed it and
+  # wrong on every other machine, and the failure is not an error: Atlantis
+  # simply locks a repository nobody has, reports success, and plans nothing.
+  - id: github.com/example/platform-infra
+    apply_requirements: [approved, mergeable, undiverged]
+    allowed_overrides:
+      - apply_requirements

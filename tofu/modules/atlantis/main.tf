@@ -1,4 +1,7 @@
-resource "random_password" "encryption_key" { length = 32 special = false }
+resource "random_password" "encryption_key" {
+  length  = 32
+  special = false
+}
 resource "random_password" "github_token" {
   length  = 40
   special = false
@@ -6,7 +9,10 @@ resource "random_password" "github_token" {
   # needs a real credential to talk to GitHub.
   keepers = { source = var.github_pat }
 }
-resource "random_password" "webhook_secret" { length = 32 special = false }
+resource "random_password" "webhook_secret" {
+  length  = 32
+  special = false
+}
 
 locals {
   github_token = var.github_pat != "" ? var.github_pat : random_password.github_token.result
@@ -20,7 +26,7 @@ resource "kubernetes_secret" "atlantis" {
   data = {
     github_token   = local.github_token
     encryption_key = random_password.encryption_key.result
-    webhook_secret = random_password.webhook_secret.result
+    github_secret  = random_password.webhook_secret.result
   }
   depends_on = [var.namespace_dependency]
 }
@@ -41,7 +47,7 @@ resource "helm_release" "atlantis" {
   timeout   = var.timeout
 
   values = concat(
-    [file("${path.module}/../../helm/values/atlantis.yaml")],
+    [file(var.values_file)],
     [yamlencode({
       # Server-side repo config is a top-level inline YAML string in this
       # chart, and there is no key anywhere in the 6.x line that points it at
@@ -50,7 +56,15 @@ resource "helm_release" "atlantis" {
       # re-rendering here is what keeps the repo identity in one place. The
       # root decides which repo, and the module ships whatever config the root
       # produced.
-      repoConfig = file("${path.module}/../../atlantis.yaml")
+      repoConfig = var.repo_config_content
+
+      # GitHub user is required for the chart to wire up the token from the
+      # vcsSecretName. If github_pat is empty, we still need a user value
+      # (dummy "local-dev") so the pod starts; the token will be a random
+      # value that won't actually work with GitHub.
+      github = {
+        user = var.github_user
+      }
 
       # Read the PAT and the webhook secret from a Secret we already own,
       # rather than passing them as values. The chart's own template stores

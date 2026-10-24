@@ -17,8 +17,24 @@ variable "github_pat" {
   sensitive   = true
 }
 
+variable "github_user" {
+  description = "GitHub username for Atlantis. Required if github_pat is set. Empty = dummy value for local dev without GitHub integration."
+  type        = string
+  default     = "local-dev"
+}
+
 variable "namespace_dependency" {
   description = "Explicit dependency so the namespace exists before the chart installs."
   type        = any
   default     = null
+}
+
+variable "values_file" {
+  description = "Path to the helm values file, relative to the OpenTofu working directory (tofu/)."
+  type        = string
+}
+
+variable "repo_config_content" {
+  description = "Content of the atlantis.yaml repo config file (rendered from template)."
+  type        = string
 }
