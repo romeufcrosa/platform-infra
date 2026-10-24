@@ -39,6 +39,7 @@ metadata:
   namespace: monitoring
   labels:
     grafana_datasource: "1"
+    app.kubernetes.io/part-of: platform-learning-ecosystem
 data:
   datasource.yaml: |
     apiVersion: 1

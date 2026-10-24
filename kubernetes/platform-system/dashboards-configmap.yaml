@@ -9,6 +9,7 @@ metadata:
   namespace: monitoring
   labels:
     grafana_dashboard: "1"
+    app.kubernetes.io/part-of: platform-learning-ecosystem
   annotations:
     grafana_folder: "Platform"
 data:
@@ -56,7 +57,7 @@ data:
               "placement": "bottom"
             },
             "tooltip": {
-              "mode": "multi"
+              "mode": "single"
             }
           },
           "targets": [
@@ -206,6 +207,7 @@ metadata:
   namespace: monitoring
   labels:
     grafana_dashboard: "1"
+    app.kubernetes.io/part-of: platform-learning-ecosystem
   annotations:
     grafana_folder: "Platform"
 data:
@@ -442,6 +444,7 @@ metadata:
   namespace: monitoring
   labels:
     grafana_dashboard: "1"
+    app.kubernetes.io/part-of: platform-learning-ecosystem
   annotations:
     grafana_folder: "Platform"
 data:
