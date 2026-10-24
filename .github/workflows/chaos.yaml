@@ -211,7 +211,7 @@ jobs:
           done
 
       - name: Upload results artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: chaos-results-${{ github.event.inputs.experiment }}-${{ github.event.inputs.environment }}
           path: |
