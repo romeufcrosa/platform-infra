@@ -68,13 +68,13 @@ section "Platform components"
 check "ArgoCD server is Available" bash -c \
   "kubectl --context '$CTX' -n argocd wait --for=condition=Available deploy/argocd-server --timeout=60s"
 check "Atlantis server is Available" bash -c \
-  "kubectl --context '$CTX' -n atlantis wait --for=condition=Available deploy/atlantis --timeout=60s"
+  "READY=\$(kubectl --context '$CTX' -n atlantis get statefulset atlantis -o jsonpath='{.status.readyReplicas}' 2>/dev/null) && TOTAL=\$(kubectl --context '$CTX' -n atlantis get statefulset atlantis -o jsonpath='{.status.replicas}' 2>/dev/null) && [ \"\$READY\" = \"\$TOTAL\" ] && [ \"\$READY\" -gt 0 ]"
 check "Vault is Available" bash -c \
-  "kubectl --context '$CTX' -n vault wait --for=condition=Available deploy/vault --timeout=60s"
+  "READY=\$(kubectl --context '$CTX' -n vault get statefulset vault -o jsonpath='{.status.readyReplicas}' 2>/dev/null) && TOTAL=\$(kubectl --context '$CTX' -n vault get statefulset vault -o jsonpath='{.status.replicas}' 2>/dev/null) && [ \"\$READY\" = \"\$TOTAL\" ] && [ \"\$READY\" -gt 0 ]"
 check "Ministack is Available" bash -c \
   "kubectl --context '$CTX' -n ministack wait --for=condition=Available deploy/ministack --timeout=60s"
 check "Prometheus is Available" bash -c \
-  "kubectl --context '$CTX' -n monitoring wait --for=condition=Available deploy/prometheus-server --timeout=60s"
+  "READY=\$(kubectl --context '$CTX' -n monitoring get statefulset prometheus-prometheus-prometheus -o jsonpath='{.status.readyReplicas}' 2>/dev/null) && TOTAL=\$(kubectl --context '$CTX' -n monitoring get statefulset prometheus-prometheus-prometheus -o jsonpath='{.status.replicas}' 2>/dev/null) && [ \"\$READY\" = \"\$TOTAL\" ] && [ \"\$READY\" -gt 0 ]"
 check "Grafana is Available" bash -c \
   "kubectl --context '$CTX' -n monitoring wait --for=condition=Available deploy/grafana --timeout=60s"
 check "External Secrets Operator is Available" bash -c \
@@ -101,8 +101,8 @@ check "ArgoCD Application is Synced" bash -c \
   "kubectl --context '$CTX' -n argocd get application platform-system -o jsonpath='{.status.sync.status}' | grep -q Synced"
 check "ArgoCD Application is Healthy" bash -c \
   "kubectl --context '$CTX' -n argocd get application platform-system -o jsonpath='{.status.health.status}' | grep -q Healthy"
-check "all 4 AppProjects exist" bash -c \
-  "[ \"\$(kubectl --context '$CTX' -n argocd get appprojects -o name | wc -l | tr -d ' ')\" -eq 4 ]"
+check "all 5 AppProjects exist" bash -c \
+  "[ \"\$(kubectl --context '$CTX' -n argocd get appprojects -o name | wc -l | tr -d ' ')\" -eq 5 ]"
 
 # --- 6. secrets -------------------------------------------------------------
 section "Secrets"
@@ -117,17 +117,20 @@ check "no secret file is tracked by git" bash -c \
 
 # --- 7. local AWS -----------------------------------------------------------
 section "Local AWS (Ministack)"
+AWS_ENV="AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test AWS_DEFAULT_REGION=us-east-1"
 check "Ministack health endpoint responds" curl -sf http://localhost:4566/_ministack/health
 for q in order-events order-events-dlq platform-notifications; do
-  check "queue '$q' exists" aws --endpoint-url http://localhost:4566 sqs describe-queues --queue-names "$q"
+  check "queue '$q' exists" bash -c "$AWS_ENV mise exec -- aws --endpoint-url http://localhost:4566 sqs get-queue-url --queue-name \"$q\" >/dev/null"
 done
 check "send/receive round-trip works" bash -c '
-  URL=$(aws --endpoint-url http://localhost:4566 sqs get-queue-url --queue-name order-events --query QueueUrl --output text)
-  RID=$(aws --endpoint-url http://localhost:4566 sqs send-message --queue-url "$URL" \
-          --message-body "{\"probe\":\"verify\"}" --query MessageId --output text) || exit 1
+  MISE_AWS="mise exec -- env AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test AWS_DEFAULT_REGION=us-east-1 aws --endpoint-url http://localhost:4566 sqs"
+  URL=$($MISE_AWS get-queue-url --queue-name order-events --query QueueUrl --output text)
+  RID=$($MISE_AWS send-message --queue-url "$URL" --message-body "{\"probe\":\"verify\"}" --query MessageId --output text) || exit 1
   [ -n "$RID" ] || exit 1
-  aws --endpoint-url http://localhost:4566 sqs delete-message --queue-url "$URL" \
-      --receipt-handle "$(aws --endpoint-url http://localhost:4566 sqs receive-message --queue-url "$URL" --max-number-of-messages 1 --query Messages[0].ReceiptHandle --output text)" >/dev/null'
+  sleep 1
+  RECEIPT=$($MISE_AWS receive-message --queue-url "$URL" --max-number-of-messages 1 2>/dev/null | python3 -c "import sys, json; d=json.load(sys.stdin); print(d[\"Messages\"][0][\"ReceiptHandle\"])")
+  [ -n "$RECEIPT" ] || exit 1
+  $MISE_AWS delete-message --queue-url "$URL" --receipt-handle "$RECEIPT" >/dev/null'
 
 # --- 8. registry ------------------------------------------------------------
 section "Container registry"

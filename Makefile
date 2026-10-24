@@ -364,7 +364,7 @@ registry-login: ## Configure docker to use local registry
 .PHONY: verify
 verify: ## Run Phase 1 success-criteria gate
 	$(call check_mise)
-	./scripts/verify-phase1.sh
+	mise exec -- ./scripts/verify-phase1.sh
 
 .PHONY: verify-services
 verify-services: ## Verify all services are healthy

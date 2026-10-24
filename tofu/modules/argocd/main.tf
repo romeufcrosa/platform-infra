@@ -318,3 +318,31 @@ resource "kubernetes_manifest" "app_project" {
   # cluster where the CRD is genuinely absent.
   depends_on = [helm_release.argocd]
 }
+
+# --- Environment AppProjects (dev, staging, prod) -----------------------------
+#
+# These are created by OpenTofu rather than synced by ArgoCD because they must
+# exist before any Application can reference them. They are committed to the
+# repository under argocd/projects/ so humans can review them, but the live
+# objects are created here.
+locals {
+  env_project_yamls = {
+    for name in ["dev", "staging", "prod"] :
+    name => templatefile(
+      "${path.module}/../../../argocd/projects/${name}.yaml",
+      {},
+    )
+  }
+}
+
+resource "local_file" "env_projects" {
+  for_each = local.env_project_yamls
+  filename = abspath("${path.module}/../../../argocd/projects/${each.key}.yaml")
+  content  = each.value
+}
+
+resource "kubernetes_manifest" "env_projects" {
+  for_each = local.env_project_yamls
+  manifest = yamldecode(each.value)
+  depends_on = [helm_release.argocd]
+}
