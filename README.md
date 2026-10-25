@@ -558,7 +558,7 @@ EOF
 - [Cluster Reset](docs/runbooks/cluster-reset.md)
 - [ArgoCD Out-of-Sync](docs/runbooks/argocd-out-of-sync.md)
 - [Atlantis Webhook Debug](docs/runbooks/atlantis-webhook-debug.md)
-- [Vault Unseal & Rotation](docs/runbooks/vault-unseal.md)
+- [Vault & Secrets](docs/runbooks/vault-secrets.md)
 - [Secrets Management](docs/runbooks/secrets-management.md)
 - [Backup & Restore](docs/runbooks/backup-restore.md)
 - [Disaster Recovery](docs/runbooks/disaster-recovery.md)

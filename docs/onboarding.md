@@ -68,10 +68,10 @@ The `mise activate` line is not optional boilerplate. On macOS `mise install` wr
 
 ## Runbooks index
 - `docs/runbooks/argocd-out-of-sync.md` - ArgoCD Application stuck in degraded/syncing state
-- `docs/runbooks/atlantis-pr-stuck.md` - Atlantis PR not getting plan/apply comments
-- `docs/runbooks/vault-secrets-not-syncing.md` - External Secrets Operator not updating Kubernetes secrets
-- `docs/runbooks/ministack-queues-missing.md` - Expected SQS queues not appearing in Ministack
-- `docs/runbooks/registry-auth-failed.md` - Kubernetes pods failing to pull from local registry
+- `docs/runbooks/atlantis-webhook-debug.md` - Atlantis webhook not receiving/processing events
+- `docs/runbooks/vault-secrets.md` - External Secrets Operator not updating Kubernetes secrets
+- `docs/runbooks/ministack-api-coverage.md` - Expected SQS queues not appearing in Ministack
+- `docs/runbooks/backup-restore.md` - Kubernetes pods failing to pull from local registry
 - `docs/runbooks/grafana-dashboard-blank.md` - Grafana dashboard showing no data
 - `docs/runbooks/pod-crashlooping.md` - Pods in CrashLoopBackOff or ImagePullBackOff state
 
