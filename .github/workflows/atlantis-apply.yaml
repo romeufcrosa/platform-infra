@@ -29,15 +29,10 @@ concurrency:
 jobs:
   apply:
     name: Comment `atlantis apply` on the merged pull request
-    if: github.event_name == 'pull_request' && github.event.pull_request.merged == true
+    # Skip if: not a merged PR, ATLANTIS_TOKEN not configured, or PR is from Dependabot
+    if: github.event_name == 'pull_request' && github.event.pull_request.merged == true && secrets.ATLANTIS_TOKEN != '' && github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     steps:
-      - name: Check ATLANTIS_TOKEN configuration
-        run: |
-          if [ -z "${{ secrets.ATLANTIS_TOKEN }}" ]; then
-            echo "ATLANTIS_TOKEN is not configured; skipping (see docs/runbooks)."
-            exit 0
-          fi
       - name: Comment the apply command
         uses: actions/github-script@v9
         with:

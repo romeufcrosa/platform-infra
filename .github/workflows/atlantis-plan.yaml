@@ -24,15 +24,10 @@ concurrency:
 jobs:
   plan:
     name: Request a plan from Atlantis
-    if: github.event_name == 'pull_request'
+    # Skip if: not a PR, ATLANTIS_URL not configured, or PR is from Dependabot
+    if: github.event_name == 'pull_request' && secrets.ATLANTIS_URL != '' && github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     steps:
-      - name: Check ATLANTIS_URL configuration
-        run: |
-          if [ -z "${{ secrets.ATLANTIS_URL }}" ]; then
-            echo "ATLANTIS_URL is not configured; skipping (see docs/runbooks)."
-            exit 0
-          fi
       - name: Trigger the plan and record the result
         env:
           ATLANTIS_URL: ${{ secrets.ATLANTIS_URL }}
