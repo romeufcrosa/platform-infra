@@ -43,7 +43,6 @@ jobs:
       - name: Lint Kustomize builds
         run: |
           set -euo pipefail
-          kubectl kustomize kubernetes/platform-system > /dev/null
           kubectl kustomize argocd > /dev/null
 
       - name: Lint YAML

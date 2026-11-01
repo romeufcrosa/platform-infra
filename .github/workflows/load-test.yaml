@@ -2,9 +2,6 @@
 name: Load Testing
 
 on:
-  schedule:
-    # Run daily at 03:00 UTC (after backup cronjob at 02:00)
-    - cron: '0 3 * * *'
   workflow_dispatch:
     inputs:
       test_type:

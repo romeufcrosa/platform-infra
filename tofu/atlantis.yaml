@@ -1,3 +1,4 @@
+---
 # Server-side repo config for Atlantis. This is rendered as repos.yaml and
 # mounted at /etc/atlantis/repos.yaml. The legacy 'repos' format is used.
 # See: https://www.runatlantis.io/docs/server-side-repo-config.html

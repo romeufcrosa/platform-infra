@@ -342,7 +342,7 @@ resource "local_file" "env_projects" {
 }
 
 resource "kubernetes_manifest" "env_projects" {
-  for_each = local.env_project_yamls
-  manifest = yamldecode(each.value)
+  for_each   = local.env_project_yamls
+  manifest   = yamldecode(each.value)
   depends_on = [helm_release.argocd]
 }

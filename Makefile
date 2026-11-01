@@ -134,6 +134,21 @@ cluster-down: ## Delete the minikube cluster (destructive)
 	@read -p "Delete minikube profile '$(MINIKUBE_PROFILE)' and ALL its data? [y/N] " a; [ "$$a" = y ]
 	minikube delete -p $(MINIKUBE_PROFILE)
 
+.PHONY: cluster-stop
+cluster-stop: ## Stop the minikube cluster (preserves state, frees CPU/memory)
+	$(call check_mise)
+	minikube stop -p $(MINIKUBE_PROFILE)
+
+.PHONY: cluster-pause
+cluster-pause: ## Pause the minikube cluster (faster resume, keeps VM running)
+	$(call check_mise)
+	minikube pause -p $(MINIKUBE_PROFILE)
+
+.PHONY: cluster-unpause
+cluster-unpause: ## Resume a paused minikube cluster
+	$(call check_mise)
+	minikube unpause -p $(MINIKUBE_PROFILE)
+
 .PHONY: cluster-reset
 cluster-reset: cluster-down cluster-up ## Full cluster reset (delete + recreate)
 
@@ -423,8 +438,8 @@ clone-services: ## Clone all service repos for local development
 	@for repo in $(GO_SERVICE_REPO) $(NODE_SERVICE_REPO) $(FRONTEND_REPO); do \
 		if [ ! -d "../$$repo" ]; then \
 			echo "Cloning $$repo..."; \
-			git clone https://github.com/romeufcrosa/$$repo.git ../$$repo || \
-				$(call log_warn,"Failed to clone $$repo (may not exist yet)"); \
+			git clone "https://github.com/romeufcrosa/$$repo.git" "../$$repo" || \
+				echo "WARN: Failed to clone $$repo (may not exist yet)" >&2; \
 		else \
 			echo "$$repo already exists"; \
 		fi; \

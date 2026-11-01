@@ -295,7 +295,7 @@ module "vault" {
 # which must be set (empty default would produce an invalid config).
 resource "local_file" "atlantis_repo_config" {
   filename = "${path.root}/atlantis.yaml"
-  content  = templatefile("${path.root}/../atlantis.yaml.tftpl", {
+  content = templatefile("${path.root}/../atlantis.yaml.tftpl", {
     atlantis_repo = var.atlantis_repo
   })
 }
@@ -308,13 +308,13 @@ resource "local_file" "atlantis_repo_config" {
 module "atlantis" {
   source = "./modules/atlantis"
 
-  namespace               = "atlantis"
-  timeout                 = var.helm_timeout
-  github_pat              = var.github_pat
-  github_user             = "local-dev"
-  values_file             = "../helm/values/atlantis.yaml"
-  repo_config_content     = local_file.atlantis_repo_config.content
-  namespace_dependency    = module.namespaces
+  namespace            = "atlantis"
+  timeout              = var.helm_timeout
+  github_pat           = var.github_pat
+  github_user          = "local-dev"
+  values_file          = "../helm/values/atlantis.yaml"
+  repo_config_content  = local_file.atlantis_repo_config.content
+  namespace_dependency = module.namespaces
 
   depends_on = [module.vault, local_file.atlantis_repo_config]
 }
@@ -346,11 +346,11 @@ resource "local_file" "postgres_password" {
 }
 
 module "postgresql" {
-  source      = "./modules/postgresql"
-  namespace   = "dev"
-  postgres_user = random_password.postgres_user.result
-  postgres_password = random_password.postgres_password.result
-  postgres_db   = "orders"
+  source               = "./modules/postgresql"
+  namespace            = "dev"
+  postgres_user        = random_password.postgres_user.result
+  postgres_password    = random_password.postgres_password.result
+  postgres_db          = "orders"
   namespace_dependency = module.namespaces
-  depends_on   = [module.namespaces]
+  depends_on           = [module.namespaces]
 }

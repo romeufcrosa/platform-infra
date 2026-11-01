@@ -35,7 +35,7 @@ resource "helm_release" "atlantis" {
   name       = "atlantis"
   repository = "https://runatlantis.github.io/helm-charts"
   chart      = "atlantis"
-  version    = "6.16.0"   # ships appVersion v0.48.0; see the divergence table
+  version    = "6.16.0" # ships appVersion v0.48.0; see the divergence table
 
   namespace = var.namespace
 
@@ -44,7 +44,7 @@ resource "helm_release" "atlantis" {
   # `module.namespaces` for_each for the same object, and the two tools then
   # disagree about who owns it.
   create_namespace = false
-  timeout   = var.timeout
+  timeout          = var.timeout
 
   values = concat(
     [file(var.values_file)],

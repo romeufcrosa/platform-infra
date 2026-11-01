@@ -30,7 +30,7 @@ output "endpoints" {
     registry   = "localhost:5000"
     ministack  = "http://localhost:4566"
     vault      = "http://localhost:8200",
-    atlantis    = "http://localhost:8080"
+    atlantis   = "http://localhost:8080"
   }
 }
 

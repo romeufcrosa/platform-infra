@@ -129,12 +129,33 @@ make cluster-shell
 # View logs
 make cluster-logs
 
+# Stop cluster (preserves state, frees CPU/memory) — RECOMMENDED for M1 MacBook daily use
+make cluster-stop
+
+# Pause cluster (faster resume, keeps VM running)
+make cluster-pause
+
+# Resume from pause
+make cluster-unpause
+
 # Delete cluster (destructive)
 make cluster-down
 
 # Full reset (delete + recreate)
 make cluster-reset
 ```
+
+#### Choosing a Shutdown Method (MacBook M1)
+
+| Command | Use Case | CPU/Memory | Resume Time | State Preserved |
+|---------|----------|------------|-------------|-----------------|
+| `make cluster-stop` | **Daily shutdown** — stop working for hours/days | ✅ Freed completely | ~30-60s (`minikube start`) | ✅ Full cluster state |
+| `make cluster-pause` | Short break — stepping away for <1 hour | ⚠️ VM still runs | ~5-10s (`minikube unpause`) | ✅ Full cluster state |
+| `make cluster-down` | **Destructive** — start fresh, reclaim disk | ✅ Freed completely | ~5-10 min (full recreate) | ❌ Everything lost |
+
+**Recommendation for MacBook M1:** Use `make cluster-stop` at end of day. It stops the minikube VM entirely, freeing all CPU and RAM while preserving your cluster state (pods, secrets, PVCs, ArgoCD apps). Resume next session with `make cluster-up` (which will start the existing profile).
+
+> **Note:** `make cluster-up` is idempotent — if the `platform` profile exists but is stopped, it starts it. If it doesn't exist, it creates it. No need for separate "start" vs "create" commands.
 
 ---
 
